@@ -35,6 +35,7 @@ class AppController(QObject):
     status_message    = pyqtSignal(str)             # 狀態列訊息
     error_occurred    = pyqtSignal(str)             # 錯誤訊息
     export_done       = pyqtSignal(str)             # 匯出完成的檔案路徑
+    pdf_preview_ready = pyqtSignal(str)             # 傳遞預覽 PDF 路徑
 
     def __init__(self, config: ConfigManager, parent=None):
         """
@@ -130,6 +131,7 @@ class AppController(QObject):
             pixmap = QPixmap.fromImage(image)
             pixmap.save(tmp.name, "PNG")
             self._screenshot_path = tmp.name
+            self._generate_preview_pdf()
         except Exception as e:
             self.error_occurred.emit(f"截圖儲存失敗：{e}")
 
@@ -141,6 +143,7 @@ class AppController(QObject):
             except OSError:
                 pass
         self._screenshot_path = None
+        self._generate_preview_pdf()
 
     def set_screenshot_from_file(self, file_path: str) -> None:
         """
@@ -150,6 +153,7 @@ class AppController(QObject):
             file_path: 圖片檔案路徑（PNG/JPG/BMP）
         """
         self._screenshot_path = file_path
+        self._generate_preview_pdf()
 
     def export_csv(self, output_dir: str | None = None) -> None:
         """匯出三個篩選結果為個別 CSV 檔案"""
@@ -222,6 +226,30 @@ class AppController(QObject):
         except Exception as e:
             self.error_occurred.emit(f"PDF 生成失敗：{e}")
 
+    def _generate_preview_pdf(self) -> None:
+        """
+        在背景靜默生成預覽版 PDF 並發送訊號供 UI 更新。
+        """
+        if self._phase1.empty and self._phase2.empty:
+            return
+            
+        temp_dir = Path(tempfile.gettempdir()) / "warrant_preview"
+        temp_dir.mkdir(exist_ok=True)
+        preview_path = str(temp_dir / "preview_report.pdf")
+        
+        try:
+            saved_path = self._report.generate_report(
+                phase1=self._phase1,
+                phase2=self._phase2,
+                warnings=self._warnings,
+                screenshot_path=self._screenshot_path,
+                stock_name=self._current_stock_query,
+                output_path=preview_path,
+            )
+            self.pdf_preview_ready.emit(saved_path)
+        except Exception as e:
+            print(f"預覽 PDF 生成失敗: {e}")
+
     # ── 資料存取 ──────────────────────────────────────────────
 
     def get_phase1(self) -> pd.DataFrame:
@@ -289,6 +317,9 @@ class AppController(QObject):
         self.phase1_updated.emit(self._phase1)
         self.phase2_updated.emit(self._phase2)
         self.warnings_updated.emit(self._warnings)
+        
+        # 觸發預覽更新
+        self._generate_preview_pdf()
 
         # 更新狀態列
         self.status_message.emit(

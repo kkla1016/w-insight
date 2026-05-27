@@ -17,6 +17,7 @@ from PyQt6.QtGui import QAction, QIcon, QFont, QKeySequence, QKeyEvent, QColor
 from views.warrant_table import WarrantTableView
 from views.stock_search_bar import StockSearchBar
 from views.screenshot_panel import ScreenshotPanel
+from views.pdf_preview_panel import PdfPreviewPanel
 
 
 class MainWindow(QMainWindow):
@@ -165,8 +166,20 @@ class MainWindow(QMainWindow):
         left_panel.setMinimumWidth(200)
         left_panel.setMaximumWidth(280)
 
-        # 右側分頁表格
-        right_panel = self._build_tab_panel()
+        # 右側主區域（垂直分隔：上欄權證資訊，下欄 PDF 預覽）
+        right_panel = QSplitter(Qt.Orientation.Vertical)
+        
+        # 右上：分頁表格
+        tab_panel = self._build_tab_panel()
+        
+        # 右下：PDF 預覽
+        self._pdf_preview = PdfPreviewPanel()
+        
+        right_panel.addWidget(tab_panel)
+        right_panel.addWidget(self._pdf_preview)
+        # 預設 1:1 比例
+        right_panel.setSizes([400, 400])
+        right_panel.setChildrenCollapsible(False)
 
         splitter.addWidget(left_panel)
         splitter.addWidget(right_panel)
@@ -248,6 +261,7 @@ class MainWindow(QMainWindow):
         self._ctrl.phase1_updated.connect(self._table_p1.load_dataframe)
         self._ctrl.phase2_updated.connect(self._table_p2.load_dataframe)
         self._ctrl.warnings_updated.connect(self._table_warn.load_dataframe)
+        self._ctrl.pdf_preview_ready.connect(self._pdf_preview.load_pdf)
         self._ctrl.stocks_list_ready.connect(self._search_bar.set_stock_list)
         self._ctrl.status_message.connect(self._update_status)
         self._ctrl.error_occurred.connect(self._show_error)
