@@ -104,11 +104,11 @@ class TestWarrantFilter:
             assert row["有效槓桿"] >= 5.0
             assert row["IV_HV_ratio"] <= 1.30
 
-    def test_phase2_sorted_by_leverage_desc(self, flt, base_df, phase2_params):
-        """階段二結果應依有效槓桿降序排列"""
+    def test_phase2_sorted_by_score_desc(self, flt, base_df, phase2_params):
+        """階段二結果應依推薦評分降序排列"""
         result = flt.filter_phase2(base_df, phase2_params)
-        leverages = result["有效槓桿"].tolist()
-        assert leverages == sorted(leverages, reverse=True)
+        scores = result["推薦評分"].tolist()
+        assert scores == sorted(scores, reverse=True)
 
     def test_detect_iv_warnings(self, flt, base_df):
         """IV 警示應正確偵測 IV/HV > 1.5 的標的"""

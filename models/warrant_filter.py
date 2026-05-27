@@ -209,12 +209,10 @@ class WarrantFilter:
             )
             filtered = df[mask_relax].copy()
 
-        # 依 DELTA 由大到小（越接近平值越好），再依成交量
-        filtered = filtered.sort_values(
-            ["DELTA", "當日成交量"],
-            ascending=[False, False]
-        )
-        return self._select_output_cols(self._inject_scores(filtered.head(30)))
+        # 個股模式不再強制依 Delta 排序，改依「推薦評分」進行綜合排序
+        # 這樣才能將成交量、天期等因素一併納入考量
+        scored = self._inject_scores(filtered)
+        return self._select_output_cols(scored.head(30))
 
     def filter_stock_phase2(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -247,12 +245,9 @@ class WarrantFilter:
             )
             filtered = df[mask_relax].copy()
 
-        # 依有效槓桿由高到低，再依 Delta
-        filtered = filtered.sort_values(
-            ["有效槓桿", "DELTA"],
-            ascending=[False, False]
-        )
-        return self._select_output_cols(self._inject_scores(filtered.head(30)))
+        # 同樣改依「推薦評分」進行綜合排序
+        scored = self._inject_scores(filtered)
+        return self._select_output_cols(scored.head(30))
 
     def detect_stock_iv_warnings(self, df: pd.DataFrame) -> pd.DataFrame:
         """
