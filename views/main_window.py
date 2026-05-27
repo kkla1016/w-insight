@@ -269,9 +269,10 @@ class MainWindow(QMainWindow):
         self._ctrl.load_and_analyze()
 
     def _on_search(self, query: str) -> None:
-        """股票搜尋觸發"""
+        """股票搜尋觸發，並動態切換分頁標題顯示目前模式"""
         self._current_stock_name = query
         self._ctrl.search_stock(query)
+        self._update_tab_titles(query)
 
     def _on_screenshot_changed(self, image) -> None:
         """截圖更新時通知 Controller"""
@@ -302,10 +303,12 @@ class MainWindow(QMainWindow):
             )
 
     def _on_data_loaded(self, date_str: str, count: int) -> None:
-        """資料載入完成後更新視窗標題"""
+        """資料載入完成後更新視窗標題並重設分頁標題"""
         self.setWindowTitle(
             f"{self.APP_TITLE}  {self.APP_VERSION}  ─  {date_str}（共 {count} 筆認購）"
         )
+        # 重設分頁標題（載入新資料時清除個股模式標示）
+        self._update_tab_titles("")
 
     def _on_export_done(self, file_path: str) -> None:
         """匯出完成後提示並詢問是否開啟資料夾"""
@@ -322,6 +325,24 @@ class MainWindow(QMainWindow):
     def _update_status(self, message: str) -> None:
         """更新狀態列訊息"""
         self._status_label.setText(message)
+
+    def _update_tab_titles(self, query: str) -> None:
+        """
+        依搜尋模式動態更新分頁標題。
+        - 有搜尋關鍵字：顯示「個股模式」及標的名稱
+        - 無搜尋關鍵字：回到全市場模式標題
+        """
+        if query.strip():
+            # 個股分析模式：標題加上標的名稱
+            name = query.strip()
+            self._tabs.setTabText(0, f"⚡ 建倉推薦 [{name}]")
+            self._tabs.setTabText(1, f"🚀 加碼推薦 [{name}]")
+            self._tabs.setTabText(2, f"⚠️ IV 分析 [{name}]")
+        else:
+            # 全市場模式：回到預設標題
+            self._tabs.setTabText(0, "⚡ 階段一：突破建倉")
+            self._tabs.setTabText(1, "🚀 階段二：主升加碼")
+            self._tabs.setTabText(2, "⚠️ IV 異常警示")
 
     def _show_error(self, message: str) -> None:
         """顯示錯誤對話框"""

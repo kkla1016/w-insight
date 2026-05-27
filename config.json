@@ -1,22 +1,22 @@
 {
-    "excel_path": "20260527172302DataExport.xlsx",
+    "excel_path": "I:/Desktop/excel選權證/20260527172302DataExport.xlsx",
     "output_dir": ".",
     "phase1_params": {
-        "delta_min": 0.40,
-        "delta_max": 0.60,
+        "delta_min": 0.4,
+        "delta_max": 0.6,
         "remaining_days_min": 90,
-        "iv_hv_min": 0.70,
-        "iv_hv_max": 1.30,
+        "iv_hv_min": 0.7,
+        "iv_hv_max": 1.3,
         "min_volume": 20,
         "min_underlying_roi": 1.5
     },
     "phase2_params": {
         "delta_min": 0.05,
-        "delta_max": 0.30,
+        "delta_max": 0.3,
         "remaining_days_min": 60,
         "remaining_days_max": 120,
         "min_leverage": 5.0,
-        "iv_hv_max": 1.30,
+        "iv_hv_max": 1.3,
         "min_volume": 10,
         "min_underlying_roi": 2.0
     },

@@ -251,7 +251,13 @@ class AppController(QObject):
     # ── 私有方法 ──────────────────────────────────────────────
 
     def _run_filter(self) -> None:
-        """內部篩選流程：搜尋 → 階段一 → 階段二 → IV 警示 → 通知 View"""
+        """
+        內部篩選流程：搜尋 → 階段一 → 階段二 → IV 警示 → 通知 View。
+
+        模式說明：
+        - 無搜尋關鍵字（全市場模式）：使用嚴格門檻篩選最優質標的
+        - 有搜尋關鍵字（個股分析模式）：放寬門檻，對該股所有權證排名推薦
+        """
         if self._raw_df is None:
             return
 
@@ -261,14 +267,23 @@ class AppController(QObject):
         )
         self._filtered_df = base_df
 
-        # 執行三組篩選
-        p1_params  = self._config.get_phase1_params()
-        p2_params  = self._config.get_phase2_params()
-        iv_thresh  = self._config.get_iv_warning_threshold()
+        is_stock_mode = bool(self._current_stock_query.strip())
 
-        self._phase1   = self._filter.filter_phase1(base_df, p1_params)
-        self._phase2   = self._filter.filter_phase2(base_df, p2_params)
-        self._warnings = self._filter.detect_iv_warnings(base_df, iv_thresh)
+        if is_stock_mode:
+            # ── 個股分析模式：放寬門檻，依排名推薦 ──────────────────
+            self._phase1   = self._filter.filter_stock_phase1(base_df)
+            self._phase2   = self._filter.filter_stock_phase2(base_df)
+            self._warnings = self._filter.detect_stock_iv_warnings(base_df)
+            mode_label = f"[個股模式] {self._current_stock_query}"
+        else:
+            # ── 全市場模式：嚴格門檻篩選 ──────────────────────────────
+            p1_params  = self._config.get_phase1_params()
+            p2_params  = self._config.get_phase2_params()
+            iv_thresh  = self._config.get_iv_warning_threshold()
+            self._phase1   = self._filter.filter_phase1(base_df, p1_params)
+            self._phase2   = self._filter.filter_phase2(base_df, p2_params)
+            self._warnings = self._filter.detect_iv_warnings(base_df, iv_thresh)
+            mode_label = "全市場"
 
         # 通知 View 更新
         self.phase1_updated.emit(self._phase1)
@@ -276,9 +291,8 @@ class AppController(QObject):
         self.warnings_updated.emit(self._warnings)
 
         # 更新狀態列
-        q = f" ({self._current_stock_query})" if self._current_stock_query else ""
         self.status_message.emit(
-            f"資料{q} | 階段一：{len(self._phase1)} 筆 | "
-            f"階段二：{len(self._phase2)} 筆 | "
+            f"{mode_label} | 建倉推薦：{len(self._phase1)} 筆 | "
+            f"加碼推薦：{len(self._phase2)} 筆 | "
             f"IV警示：{len(self._warnings)} 筆"
         )
