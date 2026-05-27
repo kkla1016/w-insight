@@ -935,7 +935,7 @@ class ReportGenerator:
             )), ""],
             # IV/HV
             [Paragraph(
-                f"IV/HV：<font color='#{iv_color.hexval()[1:]}'>{iv_str}</font>　{iv_label}",
+                f"IV/HV：<font color='#{iv_color.hexval()[2:]}'>{iv_str}</font>　{iv_label}",
                 ParagraphStyle(
                     "ckiv", fontName=f, fontSize=8.5, textColor=self.C_BLACK,
                     leading=12, spaceBefore=0, spaceAfter=0
