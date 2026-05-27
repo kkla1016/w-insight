@@ -82,11 +82,15 @@ class TestWarrantFilter:
             assert row["當日成交量"] >= 20
             assert row["標的證券ROI%"] > 1.5
 
-    def test_phase1_sorted_by_roi_desc(self, flt, base_df, phase1_params):
-        """階段一結果應依 ROI% 降序排列"""
+    def test_phase1_sorted_by_score_desc(self, flt, base_df, phase1_params):
+        """階段一結果應依推薦評分降序排列，且包含推薦評分欄"""
         result = flt.filter_phase1(base_df, phase1_params)
-        rois = result["標的證券ROI%"].tolist()
-        assert rois == sorted(rois, reverse=True)
+        # 驗證推薦評分欄存在
+        assert "推薦評分" in result.columns
+        # 驗證依推薦評分降序排列
+        scores = result["推薦評分"].tolist()
+        assert scores == sorted(scores, reverse=True), f"評分未降序排列: {scores}"
+
 
     def test_phase2_returns_correct_rows(self, flt, base_df, phase2_params):
         """階段二應只回傳 Delta 0.05~0.30、天期60~120、槓桿>=5 等條件的行"""

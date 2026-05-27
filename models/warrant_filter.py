@@ -18,12 +18,84 @@ class WarrantFilter:
 
     # 輸出欄位清單（報表所需欄位）
     OUTPUT_COLS = [
+        "推薦評分",                     # 綜合評分（最前置以便排序）
         "代號", "名稱", "標的證券", "標的證券ROI%",
         "DELTA", "剩餘期間(日)", "有效槓桿", "成本槓桿",
         "隱含波動", "歷史波動性", "IV_HV_ratio",
         "溢價比率%", "當日成交量", "未履約數", "流通在外比例(%)",
         "THETA", "VEGA", "履約價(元)", "權證收盤價(元)",
     ]
+
+    @staticmethod
+    def calculate_score(row: pd.Series) -> float:
+        """
+        計算單支權證的綜合推薦評分（滿分 100 分）。
+
+        評分維度：
+        - Delta 適切度     ：25 分（越接近 0.5 分數越高）
+        - 剩餘天期         ：20 分（天期越長越高，上限 180 天）
+        - 有效槓桿         ：20 分（槓桿越高越好，上限 10x）
+        - IV/HV 抄擺品質   ：20 分（IV/HV 越接近 1.0 越好）
+        - 流動性（成交量） ：15 分（有成交量得基礎分，多越高）
+
+        Args:
+            row: DataFrame 的一列資料
+
+        Returns:
+            0~100 的浮點數評分
+        """
+        score = 0.0
+
+        # ── Delta 適切度：25 分 ───────────────────────────────
+        try:
+            delta = float(row.get("DELTA", 0))
+            # 讓 Delta=0.5 得滿分，越遠分數越低
+            # 公式：25 * (1 - min(|delta - 0.5|, 0.5) / 0.5)
+            delta_score = 25 * (1 - min(abs(delta - 0.5), 0.5) / 0.5)
+            score += max(0, delta_score)
+        except (TypeError, ValueError):
+            pass
+
+        # ── 剩餘天期：20 分 ──────────────────────────────────
+        try:
+            days = float(row.get("剩餘期間(日)", 0))
+            # 180 天以上得滿分
+            days_score = 20 * min(days / 180, 1.0)
+            score += max(0, days_score)
+        except (TypeError, ValueError):
+            pass
+
+        # ── 有效槓桿：20 分 ──────────────────────────────────
+        try:
+            lev = float(row.get("有效槓桿", 0))
+            # 10x 以上得滿分
+            lev_score = 20 * min(lev / 10.0, 1.0)
+            score += max(0, lev_score)
+        except (TypeError, ValueError):
+            pass
+
+        # ── IV/HV 抄擺品質：20 分 ────────────────────────────
+        try:
+            iv_hv = float(row.get("IV_HV_ratio", 1.0))
+            # IV/HV 越接近 1.0 越好，超過 1.5 得 0 分
+            if iv_hv <= 1.5:
+                iv_score = 20 * (1 - min(abs(iv_hv - 1.0), 0.5) / 0.5)
+                score += max(0, iv_score)
+        except (TypeError, ValueError):
+            pass
+
+        # ── 流動性：15 分 ─────────────────────────────────────
+        try:
+            vol = float(row.get("當日成交量", 0))
+            if vol > 0:
+                import math
+                # log10 計算，成交量 1000 張以上得滿分
+                vol_score = 15 * min(math.log10(max(vol, 1)) / math.log10(1000), 1.0)
+                score += max(0, vol_score)
+        except (TypeError, ValueError):
+            pass
+
+        return round(score, 1)
 
     def filter_phase1(self, df: pd.DataFrame, params: dict) -> pd.DataFrame:
         """
@@ -51,7 +123,7 @@ class WarrantFilter:
             ["標的證券ROI%", "當日成交量"],
             ascending=[False, False]
         )
-        return self._select_output_cols(result)
+        return self._select_output_cols(self._inject_scores(result))
 
     def filter_phase2(self, df: pd.DataFrame, params: dict) -> pd.DataFrame:
         """
@@ -80,7 +152,7 @@ class WarrantFilter:
             ["有效槓桿", "標的證券ROI%"],
             ascending=[False, False]
         )
-        return self._select_output_cols(result)
+        return self._select_output_cols(self._inject_scores(result))
 
     def detect_iv_warnings(self, df: pd.DataFrame, threshold: float = 1.5) -> pd.DataFrame:
         """
@@ -142,7 +214,7 @@ class WarrantFilter:
             ["DELTA", "當日成交量"],
             ascending=[False, False]
         )
-        return self._select_output_cols(filtered.head(30))
+        return self._select_output_cols(self._inject_scores(filtered.head(30)))
 
     def filter_stock_phase2(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -180,7 +252,7 @@ class WarrantFilter:
             ["有效槓桿", "DELTA"],
             ascending=[False, False]
         )
-        return self._select_output_cols(filtered.head(30))
+        return self._select_output_cols(self._inject_scores(filtered.head(30)))
 
     def detect_stock_iv_warnings(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -231,6 +303,26 @@ class WarrantFilter:
         if "標的證券" in df.columns:
             return sorted(df["標的證券"].dropna().unique().tolist())
         return []
+
+    def _inject_scores(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        對第一欄注入「推薦評分」欄，並依評分倒序重新排列。
+        評分後加入排名後缀（第1~3名加 ★ 標記）。
+
+        Args:
+            df: 筛選後的 DataFrame
+
+        Returns:
+            帶有 推薦評分 欄的新 DataFrame
+        """
+        if df.empty:
+            return df
+        result = df.copy()
+        # 計算每列的評分
+        result["推薦評分"] = result.apply(self.calculate_score, axis=1)
+        # 依評分倒序排列
+        result = result.sort_values("推薦評分", ascending=False).reset_index(drop=True)
+        return result
 
     def _select_output_cols(
         self, df: pd.DataFrame, cols: list[str] | None = None

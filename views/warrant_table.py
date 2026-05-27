@@ -24,17 +24,24 @@ class PandasTableModel(QAbstractTableModel):
     NEGATIVE_COLS = {"THETA"}
     # IV/HV 欄位需特殊色彩處理
     IV_HV_COL = "IV_HV_ratio"
+    # 推薦評分欄位名稱
+    SCORE_COL = "推薦評分"
 
     # 色彩定義
-    COLOR_POSITIVE    = QColor("#1B8A3C")   # 深綠
-    COLOR_NEGATIVE    = QColor("#C0392B")   # 深紅
-    COLOR_WARN_ORANGE = QColor("#E67E22")   # 橘（注意）
-    COLOR_WARN_RED    = QColor("#C0392B")   # 紅（高風險）
-    COLOR_NORMAL      = QColor("#1B3A6B")   # 深藍（正常）
+    COLOR_POSITIVE    = QColor("#4ADE80")   # 亮綠（正值）
+    COLOR_NEGATIVE    = QColor("#F87171")   # 亮紅（負值）
+    COLOR_WARN_ORANGE = QColor("#FB923C")   # 亮橘（注意）
+    COLOR_WARN_RED    = QColor("#F87171")   # 亮紅（高風險）
+    COLOR_IV_OK       = QColor("#FFFFFF")   # 白色（IV 正常）
     COLOR_ROW_ODD     = QColor("#1E2D45")   # 深藍灰（奇數列背景）
     COLOR_ROW_EVEN    = QColor("#172236")   # 更深藍（偶數列背景）
     COLOR_HEADER_BG   = QColor("#0D1B2E")   # 標題背景
     COLOR_TEXT        = QColor("#E8EAF0")   # 淺灰文字
+    # 排名前三名高亮底色
+    COLOR_RANK1_BG    = QColor("#7D5A00")   # 金色底（第1名）
+    COLOR_RANK2_BG    = QColor("#4A4A5A")   # 銀色底（第2名）
+    COLOR_RANK3_BG    = QColor("#6B3A1F")   # 銅色底（第3名）
+    COLOR_RANK_TEXT   = QColor("#FFE082")   # 金色文字（排名欄）
 
     def __init__(self, df: pd.DataFrame = None, tooltips: dict = None, parent=None):
         """
@@ -71,9 +78,20 @@ class PandasTableModel(QAbstractTableModel):
             return self._format_value(col_name, value)
 
         if role == Qt.ItemDataRole.ForegroundRole:
+            # 排名前3名的評分欄文字改為金色
+            if col_name == self.SCORE_COL and self._is_top3(row):
+                return QBrush(self.COLOR_RANK_TEXT)
             return self._get_foreground(col_name, value)
 
         if role == Qt.ItemDataRole.BackgroundRole:
+            # 排名前3名整列高亮底色
+            rank = self._get_rank(row)
+            if rank == 1:
+                return QBrush(self.COLOR_RANK1_BG)
+            elif rank == 2:
+                return QBrush(self.COLOR_RANK2_BG)
+            elif rank == 3:
+                return QBrush(self.COLOR_RANK3_BG)
             bg = self.COLOR_ROW_ODD if row % 2 == 0 else self.COLOR_ROW_EVEN
             return QBrush(bg)
 
@@ -82,9 +100,37 @@ class PandasTableModel(QAbstractTableModel):
 
         if role == Qt.ItemDataRole.FontRole:
             font = QFont("Microsoft JhengHei", 9)
+            # 排名前3名加粗
+            if self._is_top3(row):
+                font.setBold(True)
             return font
 
         return None
+
+    def _get_rank(self, row: int) -> int:
+        """
+        取得該列的排名（依推薦評分欄倒序排名）。
+        若無推薦評分欄，回傳 -1。
+
+        Args:
+            row: 列索引
+
+        Returns:
+            排名整數（1=最高），無評分欄時回傳 -1
+        """
+        if self.SCORE_COL not in self._df.columns:
+            return -1
+        try:
+            scores = self._df[self.SCORE_COL].fillna(0).astype(float)
+            # 由高到低排名（相同分數並列）
+            ranked = scores.rank(ascending=False, method='first').astype(int)
+            return int(ranked.iloc[row])
+        except Exception:
+            return -1
+
+    def _is_top3(self, row: int) -> bool:
+        """判斷該列是否為前3名"""
+        return 1 <= self._get_rank(row) <= 3
 
     def headerData(self, section: int, orientation, role=Qt.ItemDataRole.DisplayRole):
         if orientation == Qt.Orientation.Horizontal:
@@ -115,7 +161,10 @@ class PandasTableModel(QAbstractTableModel):
         return str(value)
 
     def _get_foreground(self, col_name: str, value) -> QBrush | None:
-        """依欄位名稱與數值決定文字顏色"""
+        """
+        依欄位名稱與數值決定文字顏色。
+        IV_HV_ratio 正常區（≤1.3）改為白色，確保深色背景下清晰可見。
+        """
         if pd.isna(value):
             return QBrush(QColor("#666666"))
 
@@ -123,11 +172,24 @@ class PandasTableModel(QAbstractTableModel):
             try:
                 v = float(value)
                 if v > 1.5:
-                    return QBrush(self.COLOR_WARN_RED)
+                    return QBrush(self.COLOR_WARN_RED)    # 亮紅（高風險）
                 elif v > 1.3:
-                    return QBrush(self.COLOR_WARN_ORANGE)
+                    return QBrush(self.COLOR_WARN_ORANGE)  # 亮橘（注意）
                 else:
-                    return QBrush(self.COLOR_NORMAL)
+                    return QBrush(self.COLOR_IV_OK)        # 白色（正常，深色背景可見）
+            except (ValueError, TypeError):
+                pass
+
+        if col_name == self.SCORE_COL:
+            # 評分欄：分數越高越亮綠
+            try:
+                v = float(value)
+                if v >= 80:
+                    return QBrush(QColor("#FFD700"))  # 金色（高分）
+                elif v >= 60:
+                    return QBrush(QColor("#4ADE80"))  # 綠色（中高分）
+                else:
+                    return QBrush(self.COLOR_TEXT)
             except (ValueError, TypeError):
                 pass
 
