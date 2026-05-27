@@ -1,0 +1,24 @@
+{
+    "excel_path": "20260527172302DataExport.xlsx",
+    "output_dir": ".",
+    "phase1_params": {
+        "delta_min": 0.40,
+        "delta_max": 0.60,
+        "remaining_days_min": 90,
+        "iv_hv_min": 0.70,
+        "iv_hv_max": 1.30,
+        "min_volume": 20,
+        "min_underlying_roi": 1.5
+    },
+    "phase2_params": {
+        "delta_min": 0.05,
+        "delta_max": 0.30,
+        "remaining_days_min": 60,
+        "remaining_days_max": 120,
+        "min_leverage": 5.0,
+        "iv_hv_max": 1.30,
+        "min_volume": 10,
+        "min_underlying_roi": 2.0
+    },
+    "iv_warning_threshold": 1.5
+}
