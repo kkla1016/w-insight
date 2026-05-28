@@ -16,8 +16,9 @@ class PdfPreviewPanel(QWidget):
     接收 PDF 檔案路徑，並將其每一頁渲染為圖片顯示在可捲動的區域中。
     """
     
-    def __init__(self, parent=None):
+    def __init__(self, title: str = "📄 報告書即時預覽", parent=None):
         super().__init__(parent)
+        self._title = title
         self._setup_ui()
 
     def _setup_ui(self):
@@ -25,7 +26,7 @@ class PdfPreviewPanel(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         
         # 標題列
-        self.title_label = QLabel("📄 報告書即時預覽")
+        self.title_label = QLabel(self._title)
         self.title_label.setStyleSheet("""
             color: #A0C4FF;
             background-color: #0D1B2E;

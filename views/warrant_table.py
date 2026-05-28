@@ -76,6 +76,20 @@ class PandasTableModel(QAbstractTableModel):
 
         if role == Qt.ItemDataRole.DisplayRole:
             return self._format_value(col_name, value)
+            
+        if role == Qt.ItemDataRole.UserRole:
+            # 供 QSortFilterProxyModel 排序使用，回傳原始數值型態
+            if pd.isna(value):
+                return -float('inf')  # 讓 NaN 沉到最底
+            
+            import numpy as np
+            if isinstance(value, (int, float)):
+                return value
+            if isinstance(value, np.integer):
+                return int(value)
+            if isinstance(value, np.floating):
+                return float(value)
+            return str(value)
 
         if role == Qt.ItemDataRole.ForegroundRole:
             # 排名前3名的評分欄文字改為金色
@@ -227,9 +241,10 @@ class WarrantTableView(QTableView):
 
     def _setup_ui(self) -> None:
         """設定表格外觀與行為"""
-        # 允許欄位排序
+        # 允許欄位排序，並指定使用 UserRole (原始數值) 來進行比較
         self.setSortingEnabled(True)
         self.horizontalHeader().setSortIndicatorShown(True)
+        self._proxy.setSortRole(Qt.ItemDataRole.UserRole)
 
         # 選取整行
         self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -291,6 +306,11 @@ class WarrantTableView(QTableView):
         self._source_model.update_data(df)
         # 重設排序
         self._proxy.invalidate()
+        
+        # 預設以第 0 欄（排名）進行遞增排序 (1, 2, 3...)
+        if not df.empty:
+            self.sortByColumn(0, Qt.SortOrder.AscendingOrder)
+            
         self.resizeColumnsToContents()
         # 確保最後欄延伸到邊界
         header = self.horizontalHeader()

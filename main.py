@@ -1,6 +1,6 @@
 """
-台股權證兩階段選股分析系統
-程式入口：初始化 QApplication、ConfigManager、AppController 並啟動主視窗。
+W-Insight (權證洞察)
+程式進入點 (Entry Point)
 """
 
 import sys

@@ -99,6 +99,12 @@ class StockSearchBar(QWidget):
         """回傳目前輸入框的文字內容"""
         return self._input.text().strip()
 
+    def set_text(self, text: str) -> None:
+        """以程式方式設定輸入框文字（不觸發搜尋信號，避免啟動時重複開啟瀏覽器）"""
+        self._input.blockSignals(True)
+        self._input.setText(text)
+        self._input.blockSignals(False)
+
     def _on_text_changed(self, text: str) -> None:
         """輸入變更時即時觸發搜尋"""
         self.search_triggered.emit(text.strip())

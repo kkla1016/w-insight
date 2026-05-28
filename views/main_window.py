@@ -9,7 +9,7 @@ from pathlib import Path
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QTabWidget, QToolBar, QStatusBar, QLabel,
-    QFileDialog, QMessageBox, QSplitter, QApplication,
+    QFileDialog, QMessageBox, QSplitter, QApplication, QInputDialog,
 )
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QAction, QIcon, QFont, QKeySequence, QKeyEvent, QColor
@@ -25,7 +25,7 @@ class MainWindow(QMainWindow):
     應用程式主視窗，負責組裝所有 View 元件並連接 Controller 信號。
     """
 
-    APP_TITLE   = "台股權證兩階段選股分析系統"
+    APP_TITLE   = "W-Insight (權證洞察)"
     APP_VERSION = "v1.0.0"
     WIN_MIN_W   = 1100
     WIN_MIN_H   = 700
@@ -132,8 +132,9 @@ class MainWindow(QMainWindow):
         self._act_excel   = make_action("匯出 Excel", "📋", "匯出為多分頁 Excel 檔案",   self._on_export_excel)
         self._act_pdf     = make_action("匯出 PDF 報告", "📄", "生成含截圖的完整分析報告書", self._on_export_pdf)
         self._act_refresh = make_action("重新整理",   "🔄", "重新載入並分析資料",         self._on_refresh)
+        self._act_default_stock = make_action("設定預設股票", "⭐", "設定 APP 啟動時預設自動搜尋的股票代號", self._on_set_default_stock)
 
-        for act in [self._act_load, self._act_csv, self._act_excel, self._act_pdf, self._act_refresh]:
+        for act in [self._act_load, self._act_csv, self._act_excel, self._act_pdf, self._act_refresh, self._act_default_stock]:
             self._style_action(act)
             tb.addAction(act)
             tb.addSeparator()
@@ -172,12 +173,18 @@ class MainWindow(QMainWindow):
         # 右上：分頁表格
         tab_panel = self._build_tab_panel()
         
-        # 右下：PDF 預覽
-        self._pdf_preview = PdfPreviewPanel()
+        # 右下：PDF 雙欄預覽 (1:1)
+        pdf_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._pdf_preview_v1 = PdfPreviewPanel("📄 原版報告書即時預覽")
+        self._pdf_preview_v2 = PdfPreviewPanel("🏆 V2.0 版報告書即時預覽")
+        pdf_splitter.addWidget(self._pdf_preview_v1)
+        pdf_splitter.addWidget(self._pdf_preview_v2)
+        pdf_splitter.setSizes([500, 500])
+        pdf_splitter.setChildrenCollapsible(False)
         
         right_panel.addWidget(tab_panel)
-        right_panel.addWidget(self._pdf_preview)
-        # 預設 1:1 比例
+        right_panel.addWidget(pdf_splitter)
+        # 預設上下 1:1 比例
         right_panel.setSizes([400, 400])
         right_panel.setChildrenCollapsible(False)
 
@@ -243,6 +250,14 @@ class MainWindow(QMainWindow):
         self._table_warn = WarrantTableView(tooltips=tooltips)
         self._tabs.addTab(self._table_warn, "⚠️ IV 異常警示")
 
+        # V2 A級分頁
+        self._table_v2_a = WarrantTableView(tooltips=tooltips)
+        self._tabs.addTab(self._table_v2_a, "🏆 V2.0 主力攻擊型 (A級)")
+
+        # V2 B級分頁
+        self._table_v2_b = WarrantTableView(tooltips=tooltips)
+        self._tabs.addTab(self._table_v2_b, "📈 V2.0 穩健趨勢型 (B級)")
+
         return self._tabs
 
     def _setup_statusbar(self) -> None:
@@ -261,7 +276,12 @@ class MainWindow(QMainWindow):
         self._ctrl.phase1_updated.connect(self._table_p1.load_dataframe)
         self._ctrl.phase2_updated.connect(self._table_p2.load_dataframe)
         self._ctrl.warnings_updated.connect(self._table_warn.load_dataframe)
-        self._ctrl.pdf_preview_ready.connect(self._pdf_preview.load_pdf)
+        self._ctrl.v2_class_a_updated.connect(self._table_v2_a.load_dataframe)
+        self._ctrl.v2_class_b_updated.connect(self._table_v2_b.load_dataframe)
+        self._ctrl.pdf_preview_ready.connect(self._pdf_preview_v1.load_pdf)
+        # 將等待 controller 加入 pdf_v2_preview_ready 信號
+        if hasattr(self._ctrl, 'pdf_v2_preview_ready'):
+            self._ctrl.pdf_v2_preview_ready.connect(self._pdf_preview_v2.load_pdf)
         self._ctrl.stocks_list_ready.connect(self._search_bar.set_stock_list)
         self._ctrl.status_message.connect(self._update_status)
         self._ctrl.error_occurred.connect(self._show_error)
@@ -316,13 +336,34 @@ class MainWindow(QMainWindow):
                 output_dir=out_dir,
             )
 
+    def _on_set_default_stock(self) -> None:
+        """彈出對話框讓使用者輸入並儲存預設股票代號"""
+        current = self._ctrl.get_default_stock_query()
+        text, ok = QInputDialog.getText(
+            self,
+            "設定預設股票",
+            "請輸入股票代號或名稱（APP 啟動時將自動搜尋此標的）：",
+            text=current,
+        )
+        if ok and text.strip():
+            self._ctrl.set_default_stock_query(text.strip())
+            QMessageBox.information(
+                self,
+                "設定成功",
+                f"預設股票已設定為：「{text.strip()}」\n下次啟動 APP 時將自動套用。",
+            )
+
     def _on_data_loaded(self, date_str: str, count: int) -> None:
         """資料載入完成後更新視窗標題並重設分頁標題"""
         self.setWindowTitle(
             f"{self.APP_TITLE}  {self.APP_VERSION}  ─  {date_str}（共 {count} 筆認購）"
         )
+        # 自動將預設股票填入搜尋欄
+        default_q = self._ctrl.get_default_stock_query()
+        if default_q:
+            self._search_bar.set_text(default_q)
         # 重設分頁標題（載入新資料時清除個股模式標示）
-        self._update_tab_titles("")
+        self._update_tab_titles(default_q)
 
     def _on_export_done(self, file_path: str) -> None:
         """匯出完成後提示並詢問是否開啟資料夾"""

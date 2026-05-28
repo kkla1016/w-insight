@@ -1,5 +1,6 @@
 {
     "excel_path": "I:/Desktop/excel選權證/20260527172302DataExport.xlsx",
+    "default_stock_query": "3189",
     "output_dir": ".",
     "phase1_params": {
         "delta_min": 0.4,

@@ -146,7 +146,7 @@ class TradingStrategy:
 
     def get_report_title(self) -> str:
         """回傳 PDF 報告書主標題"""
-        return "台股權證兩階段選股分析報告"
+        return "W-Insight (權證洞察) 分析報告"
 
     def get_report_subtitle(self, stock_name: str, report_date: str) -> str:
         """回傳 PDF 報告書副標題"""

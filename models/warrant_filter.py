@@ -18,6 +18,7 @@ class WarrantFilter:
 
     # 輸出欄位清單（報表所需欄位）
     OUTPUT_COLS = [
+        "排名",                         # 名次排名
         "推薦評分",                     # 綜合評分（最前置以便排序）
         "代號", "名稱", "標的證券", "標的證券ROI%",
         "DELTA", "剩餘期間(日)", "有效槓桿", "成本槓桿",
@@ -278,20 +279,151 @@ class WarrantFilter:
 
         Args:
             df: 預處理後的 DataFrame
-            query: 搜尋關鍵字（支援部分匹配）
-
-        Returns:
-            匹配的 DataFrame，空字串時回傳原始 df
         """
-        if not query or not query.strip():
-            return df
-        q = query.strip()
-        # 同時比對標的證券名稱與代號
+        # 依股票名稱或代號搜尋，僅回傳完全包含關鍵字的資料
+        q = str(query).strip()
         mask = (
             df["標的證券"].str.contains(q, na=False, case=False) |
             df["代號"].str.contains(q, na=False, case=False)
         )
         return df[mask].copy()
+
+    # ──────────────────────────────────────────────────────────
+    # V2 專業權證交易策略 (professional_warrant_trader_skill_v_2.md)
+    # ──────────────────────────────────────────────────────────
+
+    @staticmethod
+    def calculate_v2_score(row: pd.Series) -> float:
+        """
+        V2.0 系統總評分（滿分 100 分，近似版）
+        A模組 (現股結構 25分): 以標的證券ROI%作為強度加分。
+        B模組 (權證品質 35分): IV/HV (10分) + 基礎分(25分補償Spread等)。
+        C模組 (爆發能力 20分): Delta 區間 (10分) + Gamma/Theta比 (10分)。
+        D模組 (交易安全性 20分): 剩餘天期 (10分) + 流動性金額 (10分)。
+        """
+        score = 0.0
+        
+        # A 模組：現股結構 (25分) -> 基礎分 15 + ROI加分 (最高10)
+        roi = row.get("標的證券ROI%", 0)
+        roi_score = 10 if roi > 4 else (7 if roi > 2 else (4 if roi > 0 else 0))
+        score += 15 + roi_score
+
+        # B 模組：權證品質 (35分) -> 基礎分 25 + IV/HV (最高10)
+        iv_hv = row.get("IV_HV_ratio", 1.0)
+        if pd.isna(iv_hv):
+            iv_score = 5
+        elif 0.8 <= iv_hv <= 1.2:
+            iv_score = 10
+        elif iv_hv <= 1.4:
+            iv_score = 6
+        elif iv_hv <= 1.6:
+            iv_score = 3
+        else:
+            iv_score = 0
+        score += 25 + iv_score
+
+        # C 模組：爆發能力 (20分)
+        # C1. Delta 區間 (10分)
+        delta = row.get("DELTA", 0)
+        if pd.isna(delta):
+            delta = 0
+        delta = abs(delta) # 轉正數
+        if 0.25 <= delta <= 0.45:
+            d_score = 10
+        elif 0.45 < delta <= 0.65:
+            d_score = 8
+        elif 0.15 <= delta < 0.25:
+            d_score = 6
+        elif delta > 0.70:
+            d_score = 3
+        else:
+            d_score = 2
+        score += d_score
+
+        # C2. Gamma/Theta (10分)
+        gamma = row.get("GAMMA", 0)
+        theta = row.get("THETA", -1) # 通常是負數
+        gamma = 0 if pd.isna(gamma) else gamma
+        theta = -1 if pd.isna(theta) or theta == 0 else theta
+        
+        # Gamma/abs(Theta) 比值，越大越好
+        gt_ratio = gamma / abs(theta)
+        if gt_ratio > 50:
+            gt_score = 10
+        elif gt_ratio > 20:
+            gt_score = 6
+        else:
+            gt_score = 2
+        score += gt_score
+
+        # D 模組：交易安全性 (20分)
+        # D1. 剩餘天期 (10分)
+        days = row.get("剩餘期間(日)", 0)
+        if days >= 90:
+            days_score = 10
+        elif days >= 60:
+            days_score = 7
+        elif days >= 45:
+            days_score = 4
+        else:
+            days_score = 0
+        score += days_score
+
+        # D2. 流動性 (10分) - 成交金額 (成交量 * 收盤價 * 1000)
+        vol = row.get("當日成交量", 0)
+        price = row.get("權證收盤價(元)", 1)
+        amount = vol * price * 1000
+        if amount > 3000000:
+            amount_score = 10
+        elif amount >= 1000000:
+            amount_score = 7
+        elif amount >= 500000:
+            amount_score = 4
+        else:
+            amount_score = 0
+        score += amount_score
+
+        return round(score, 1)
+
+    def filter_v2_class_a(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        V2.0 A級：主力攻擊型 (S級 85-100 / A級 75-84)
+        """
+        # 基本排除死亡名單
+        mask = (
+            (df["IV_HV_ratio"] <= 1.8) &
+            (df["剩餘期間(日)"] >= 30)
+        )
+        filtered = df[mask].copy()
+        if filtered.empty:
+            return filtered
+        
+        # 計算分數
+        filtered["推薦評分"] = filtered.apply(self.calculate_v2_score, axis=1)
+        # S級與A級：分數 >= 75
+        result = filtered[filtered["推薦評分"] >= 75].copy()
+        result = result.sort_values("推薦評分", ascending=False).reset_index(drop=True)
+        return self._select_output_cols(result.head(30))
+
+    def filter_v2_class_b(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        V2.0 B級：穩健趨勢型 (B級 60-74)
+        """
+        # 基本排除死亡名單
+        mask = (
+            (df["IV_HV_ratio"] <= 1.8) &
+            (df["剩餘期間(日)"] >= 30)
+        )
+        filtered = df[mask].copy()
+        if filtered.empty:
+            return filtered
+
+        # 計算分數
+        filtered["推薦評分"] = filtered.apply(self.calculate_v2_score, axis=1)
+        # B級：分數 60 ~ 74
+        result = filtered[(filtered["推薦評分"] >= 60) & (filtered["推薦評分"] < 75)].copy()
+        result = result.sort_values("推薦評分", ascending=False).reset_index(drop=True)
+        return self._select_output_cols(result.head(30))
 
     def get_unique_stocks(self, df: pd.DataFrame) -> list[str]:
         """回傳所有唯一的標的證券名稱清單，供自動補全使用"""
@@ -324,5 +456,11 @@ class WarrantFilter:
     ) -> pd.DataFrame:
         """只保留存在且在指定清單中的欄位，避免 KeyError"""
         target = cols if cols is not None else self.OUTPUT_COLS
+        
+        # 若需要輸出排名，動態產生名次
+        if not df.empty and "排名" in target and "排名" not in df.columns:
+            df = df.copy()
+            df.insert(0, "排名", range(1, len(df) + 1))
+            
         available = [c for c in target if c in df.columns]
         return df[available].reset_index(drop=True)

@@ -37,6 +37,7 @@ class ConfigManager:
             "min_underlying_roi": 2.0,
         },
         "iv_warning_threshold": 1.5,
+        "default_stock_query": "3189",  # 預設啟動時自動搜尋的股票代號
     }
 
     def __init__(self, config_path: str = "config.json"):
@@ -113,3 +114,12 @@ class ConfigManager:
     def get_iv_warning_threshold(self) -> float:
         """回傳 IV 異常警示的 IV/HV 門檻值"""
         return float(self._config.get("iv_warning_threshold", 1.5))
+
+    def get_default_stock_query(self) -> str:
+        """回傳啟動時預設搜尋的股票代號或名稱"""
+        return self._config.get("default_stock_query", "3189")
+
+    def set_default_stock_query(self, query: str) -> None:
+        """更新預設股票代號並自動儲存設定"""
+        self._config["default_stock_query"] = query.strip()
+        self.save()

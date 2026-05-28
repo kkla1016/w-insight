@@ -36,6 +36,9 @@ class AppController(QObject):
     error_occurred    = pyqtSignal(str)             # 錯誤訊息
     export_done       = pyqtSignal(str)             # 匯出完成的檔案路徑
     pdf_preview_ready = pyqtSignal(str)             # 傳遞預覽 PDF 路徑
+    pdf_v2_preview_ready = pyqtSignal(str)          # V2 PDF 路徑
+    v2_class_a_updated= pyqtSignal(object)          # V2 A級 DataFrame
+    v2_class_b_updated= pyqtSignal(object)          # V2 B級 DataFrame
 
     def __init__(self, config: ConfigManager, parent=None):
         """
@@ -57,6 +60,8 @@ class AppController(QObject):
         self._phase1:      pd.DataFrame = pd.DataFrame()
         self._phase2:      pd.DataFrame = pd.DataFrame()
         self._warnings:    pd.DataFrame = pd.DataFrame()
+        self._v2_class_a:  pd.DataFrame = pd.DataFrame()       # V2 A級
+        self._v2_class_b:  pd.DataFrame = pd.DataFrame()       # V2 B級
         self._screenshot_path: str | None = None       # 日K截圖暫存路徑
         self._current_stock_query: str = ""            # 目前搜尋關鍵字
 
@@ -91,6 +96,12 @@ class AppController(QObject):
             stocks = self._filter.get_unique_stocks(self._raw_df)
             self.stocks_list_ready.emit(stocks)
 
+            # 套用預設股票搜尋（僅首次載入時，若 _current_stock_query 尚未設定）
+            if not self._current_stock_query:
+                default_q = self._config.get_default_stock_query()
+                if default_q:
+                    self._current_stock_query = default_q
+
             # 執行篩選
             self._run_filter()
 
@@ -103,15 +114,47 @@ class AppController(QObject):
 
     def search_stock(self, query: str) -> None:
         """
-        依股票名稱關鍵字重新篩選資料。
+        依股票名稱關鍵字重新篩選資料，並自動開啟 Yahoo 股市技術分析網頁。
 
         Args:
             query: 搜尋關鍵字，空字串表示全部
         """
         if self._raw_df is None:
             return
-        self._current_stock_query = query
+        self._current_stock_query = query.strip()
+
+        # 開啟 Yahoo 股市技術分析
+        if self._current_stock_query and not self._raw_df.empty:
+            q = self._current_stock_query
+            mask = self._raw_df["標的證券"].str.contains(q, na=False, case=False)
+            matched = self._raw_df[mask]
+            if not matched.empty:
+                import re, webbrowser
+                first_stock = matched["標的證券"].iloc[0]
+                m = re.search(r'^(\d+)', str(first_stock).strip())
+                if m:
+                    stock_code = m.group(1)
+                    url = f"https://tw.stock.yahoo.com/quote/{stock_code}.TW/technical-analysis"
+                    try:
+                        webbrowser.open(url)
+                    except Exception as e:
+                        print(f"無法開啟瀏覽器: {e}")
+
         self._run_filter()
+
+    def set_default_stock_query(self, query: str) -> None:
+        """
+        更新預設股票並儲存到設定檔。
+        下次啟動 APP 時將自動以此股票代號進行搜尋。
+
+        Args:
+            query: 股票代號或名稱字串
+        """
+        self._config.set_default_stock_query(query)
+
+    def get_default_stock_query(self) -> str:
+        """回傳目前儲存的預設股票代號"""
+        return self._config.get_default_stock_query()
 
     def set_screenshot(self, image: QImage) -> None:
         """
@@ -228,27 +271,43 @@ class AppController(QObject):
 
     def _generate_preview_pdf(self) -> None:
         """
-        在背景靜默生成預覽版 PDF 並發送訊號供 UI 更新。
+        在背景靜默生成原版與 V2.0 預覽版 PDF 並發送訊號供 UI 更新。
         """
-        if self._phase1.empty and self._phase2.empty:
+        if self._phase1.empty and self._phase2.empty and self._v2_class_a.empty and self._v2_class_b.empty:
             return
             
         temp_dir = Path(tempfile.gettempdir()) / "warrant_preview"
         temp_dir.mkdir(exist_ok=True)
-        preview_path = str(temp_dir / "preview_report.pdf")
         
+        # 1. 生成原版報告書
+        preview_path_v1 = str(temp_dir / "preview_report.pdf")
         try:
-            saved_path = self._report.generate_report(
+            saved_path_v1 = self._report.generate_report(
                 phase1=self._phase1,
                 phase2=self._phase2,
                 warnings=self._warnings,
                 screenshot_path=self._screenshot_path,
                 stock_name=self._current_stock_query,
-                output_path=preview_path,
+                output_path=preview_path_v1,
             )
-            self.pdf_preview_ready.emit(saved_path)
+            self.pdf_preview_ready.emit(saved_path_v1)
         except Exception as e:
-            print(f"預覽 PDF 生成失敗: {e}")
+            print(f"原版預覽 PDF 生成失敗: {e}")
+
+        # 2. 生成 V2.0 報告書
+        preview_path_v2 = str(temp_dir / "preview_report_v2.pdf")
+        try:
+            saved_path_v2 = self._report.generate_v2_report(
+                class_a=self._v2_class_a,
+                class_b=self._v2_class_b,
+                warnings=self._warnings,
+                screenshot_path=self._screenshot_path,
+                stock_name=self._current_stock_query,
+                output_path=preview_path_v2,
+            )
+            self.pdf_v2_preview_ready.emit(saved_path_v2)
+        except Exception as e:
+            print(f"V2.0 預覽 PDF 生成失敗: {e}")
 
     # ── 資料存取 ──────────────────────────────────────────────
 
@@ -263,6 +322,14 @@ class AppController(QObject):
     def get_warnings(self) -> pd.DataFrame:
         """回傳 IV 異常警示結果"""
         return self._warnings
+
+    def get_v2_class_a(self) -> pd.DataFrame:
+        """回傳 V2 A級篩選結果"""
+        return self._v2_class_a
+
+    def get_v2_class_b(self) -> pd.DataFrame:
+        """回傳 V2 B級篩選結果"""
+        return self._v2_class_b
 
     def get_strategy(self) -> TradingStrategy:
         """回傳策略物件（供 View 取得 Tooltip 等文字）"""
@@ -313,10 +380,16 @@ class AppController(QObject):
             self._warnings = self._filter.detect_iv_warnings(base_df, iv_thresh)
             mode_label = "全市場"
 
+        # V2 策略是獨立的，不分個股或全市場模式皆可直接執行
+        self._v2_class_a = self._filter.filter_v2_class_a(base_df)
+        self._v2_class_b = self._filter.filter_v2_class_b(base_df)
+
         # 通知 View 更新
         self.phase1_updated.emit(self._phase1)
         self.phase2_updated.emit(self._phase2)
         self.warnings_updated.emit(self._warnings)
+        self.v2_class_a_updated.emit(self._v2_class_a)
+        self.v2_class_b_updated.emit(self._v2_class_b)
         
         # 觸發預覽更新
         self._generate_preview_pdf()

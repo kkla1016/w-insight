@@ -200,6 +200,70 @@ class ReportGenerator:
         doc.build(story)
         return str(Path(output_path).resolve())
 
+    def generate_v2_report(
+        self,
+        class_a: pd.DataFrame,
+        class_b: pd.DataFrame,
+        warnings: pd.DataFrame,
+        screenshot_path: str | None = None,
+        stock_name: str = "",
+        output_path: str = "v2_report.pdf",
+    ) -> str:
+        """生成 V2.0 完整 PDF 報告書"""
+        report_date = datetime.now().strftime("%Y/%m/%d")
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+
+        doc = SimpleDocTemplate(
+            output_path,
+            pagesize=A4,
+            leftMargin=self.MARGIN,
+            rightMargin=self.MARGIN,
+            topMargin=self.MARGIN,
+            bottomMargin=self.MARGIN,
+        )
+
+        styles = self._build_styles()
+        story = []
+
+        # ① 頁首：標題列 + 摘要卡片 (與 V1 共用)
+        story += self._build_header(styles, stock_name, report_date, class_a, class_b)
+        story.append(Spacer(1, 0.4 * cm))
+
+        # ② 日K截圖
+        if screenshot_path and Path(screenshot_path).exists():
+            story += self._build_screenshot_block(styles, screenshot_path)
+            story.append(Spacer(1, 0.4 * cm))
+
+        # ③ V2 主力攻擊型
+        story += self._build_v2_class_a_block(styles, class_a, stock_name)
+        story.append(Spacer(1, 0.4 * cm))
+
+        # ④ V2 穩健趨勢型
+        story += self._build_v2_class_b_block(styles, class_b, stock_name)
+        story.append(Spacer(1, 0.4 * cm))
+
+        # ⑤ 出場紀律
+        story += self._build_exit_discipline(styles)
+        story.append(Spacer(1, 0.4 * cm))
+
+        # ⑥ 交易員綜合評估
+        story += self._build_trader_assessment(styles, class_a, class_b, warnings, stock_name, report_date)
+        story.append(Spacer(1, 0.3 * cm))
+
+        # ⑦ IV 警示區塊
+        if not warnings.empty:
+            story += self._build_iv_warnings_block(styles, warnings)
+
+        # ⑧ 頁尾
+        story.append(Spacer(1, 0.5 * cm))
+        story.append(Paragraph(
+            f"以上 V2.0 分析基於 {report_date} 盤後資料，僅供研究參考，不構成投資建議。",
+            styles["footer"]
+        ))
+
+        doc.build(story)
+        return str(Path(output_path).resolve())
+
     @staticmethod
     def build_filepath_with_stock(output_dir: str, stock_name: str) -> str:
         """
@@ -542,6 +606,52 @@ class ReportGenerator:
             # 2x2 卡片式標的展示
             elements += self._build_warrant_cards(phase2.head(4), f, fb, cw,
                                                    card_color=colors.HexColor("#EBF5FB"))
+
+        return elements
+
+    def _build_v2_class_a_block(self, styles, class_a: pd.DataFrame, stock_name: str) -> list:
+        """V2.0 A級 主力攻擊型 區塊"""
+        f = self._f()
+        fb = self._fb()
+        cw = self.CONTENT_W
+        elements = []
+
+        elements.append(self._section_divider("🏆 V2.0 主力攻擊型 (A級)", self.C_DEEP_BLUE))
+        elements.append(Spacer(1, 0.15 * cm))
+
+        tag_text = "主力重押　高Gamma、突破發動、Delta 0.25~0.45"
+        elements.append(self._build_tag_row(tag_text, self.C_DEEP_BLUE, self.C_SECTION_BG))
+        elements.append(Spacer(1, 0.2 * cm))
+
+        if class_a.empty:
+            elements.append(Paragraph("（無符合 A 級條件之標的）", ParagraphStyle(
+                "nd", fontName=f, fontSize=9, textColor=self.C_GRAY_TEXT, alignment=1, leading=12
+            )))
+        else:
+            elements += self._build_warrant_cards(class_a.head(4), f, fb, cw, card_color=colors.HexColor("#EBF5FB"))
+
+        return elements
+
+    def _build_v2_class_b_block(self, styles, class_b: pd.DataFrame, stock_name: str) -> list:
+        """V2.0 B級 穩健趨勢型 區塊"""
+        f = self._f()
+        fb = self._fb()
+        cw = self.CONTENT_W
+        elements = []
+
+        elements.append(self._section_divider("📈 V2.0 穩健趨勢型 (B級)", self.C_MID_BLUE))
+        elements.append(Spacer(1, 0.15 * cm))
+
+        tag_text = "波段主倉　Theta低、長天期、Delta 0.45~0.65"
+        elements.append(self._build_tag_row(tag_text, self.C_DEEP_BLUE, self.C_SECTION_BG))
+        elements.append(Spacer(1, 0.2 * cm))
+
+        if class_b.empty:
+            elements.append(Paragraph("（無符合 B 級條件之標的）", ParagraphStyle(
+                "nd", fontName=f, fontSize=9, textColor=self.C_GRAY_TEXT, alignment=1, leading=12
+            )))
+        else:
+            elements += self._build_warrant_cards(class_b.head(4), f, fb, cw, card_color=colors.HexColor("#F8F9F9"))
 
         return elements
 
