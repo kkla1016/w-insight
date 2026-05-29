@@ -97,3 +97,16 @@ class TestDataLoader:
         })
         result = loader._calculate_iv_hv(df)
         assert pd.isna(result.iloc[0]["IV_HV_ratio"])
+
+    def test_calculate_moneyness(self, loader):
+        """應正確計算價內外百分比並轉為中文字串格式"""
+        df = pd.DataFrame({
+            "履約價(元)": [100.0, 100.0, 100.0, 0.0],
+            "標的證券價格(元)": [110.0, 90.0, 100.0, 110.0],
+        })
+        result = loader._calculate_moneyness(df)
+        assert "價內外程度" in result.columns
+        assert result.iloc[0]["價內外程度"] == "價內 10.0%"
+        assert result.iloc[1]["價內外程度"] == "價外 10.0%"
+        assert result.iloc[2]["價內外程度"] == "價內 0.0%"
+        assert result.iloc[3]["價內外程度"] == "—"

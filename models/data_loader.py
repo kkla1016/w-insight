@@ -71,7 +71,7 @@ class DataLoader:
     def preprocess(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         對載入的原始資料執行完整的前置處理流程：
-        數值轉型 → IV/HV 計算 → 篩選認購 → 排除 ETF
+        數值轉型 → IV/HV 計算 → 價內外程度計算 → 篩選認購 → 排除 ETF
 
         Args:
             df: 原始 DataFrame
@@ -81,6 +81,7 @@ class DataLoader:
         """
         df = self._convert_numeric(df)
         df = self._calculate_iv_hv(df)
+        df = self._calculate_moneyness(df)
         df = self._filter_call_warrants(df)
         df = self._exclude_etf(df)
         return df.reset_index(drop=True)
@@ -123,3 +124,38 @@ class DataLoader:
             )
             return df[is_pure_stock].copy()
         return df
+
+    def _calculate_moneyness(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        實時計算認購權證的價內外程度（%）。
+        公式：((標的證券價格 - 履約價) / 履約價) * 100
+        若結果 >= 0，顯示為「價內 X.x%」；若結果 < 0，顯示為「價外 X.x%」。
+        """
+        # 複製以避免對原始 DataFrame 產生 SettingWithCopyWarning
+        df = df.copy()
+
+        # 檢查必要欄位是否存在
+        if "標的證券價格(元)" in df.columns and "履約價(元)" in df.columns:
+            # 確保欄位是數值型態，防禦性轉換
+            strike = pd.to_numeric(df["履約價(元)"], errors="coerce")
+            underlying = pd.to_numeric(df["標的證券價格(元)"], errors="coerce")
+
+            # 避免除以零，將 0 替換為 NaN
+            strike_replaced = strike.replace(0, np.nan)
+            diff_percent = (underlying - strike_replaced) / strike_replaced * 100
+
+            # 內部格式化函數：將百分比轉換為「價內/價外」中文字串
+            def format_val(val):
+                if pd.isna(val):
+                    return "—"
+                if val >= 0:
+                    return f"價內 {val:.1f}%"
+                else:
+                    return f"價外 {abs(val):.1f}%"
+
+            df["價內外程度"] = diff_percent.apply(format_val)
+        else:
+            df["價內外程度"] = "—"
+
+        return df
+

@@ -170,6 +170,19 @@ class PandasTableModel(QAbstractTableModel):
         """格式化顯示值"""
         if pd.isna(value):
             return "-"
+
+        # 針對隱含波動與歷史波動性，格式化為百分比形式（保留兩位小數）
+        if col_name in {"隱含波動", "歷史波動性"}:
+            try:
+                v = float(value)
+                # 判斷是小數（如 0.5858）還是已經是百分比（如 58.58）
+                if abs(v) <= 2.0:
+                    return f"{v * 100:.2f}%"
+                else:
+                    return f"{v:.2f}%"
+            except (ValueError, TypeError):
+                pass
+
         if isinstance(value, float):
             return f"{value:.2f}"
         return str(value)
