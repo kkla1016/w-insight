@@ -223,4 +223,63 @@ class TestReportGeneratorChips:
         assert any("價外 10.0%" in val for val in moneyness_vals)
         assert any("價內 0.0%" in val for val in moneyness_vals)
 
+    def test_make_single_card_with_new_metrics(self, generator):
+        """測試卡片生成時，是否能精確提取並格式化新增的 5 大指標，且能正確生成 Table"""
+        import pandas as pd
+        row = pd.Series({
+            "代號": "03001P",
+            "名稱": "南茂永豐5B購02",
+            "DELTA": 0.049,
+            "剩餘期間(日)": 182,
+            "有效槓桿": 2.42,
+            "成本槓桿": 4.93,
+            "IV_HV_ratio": 0.9946,
+            "當日成交量": 568,
+            "未履約數": 4500,
+            "隱含波動": 0.586,
+            "歷史波動性": 0.589,
+            "履約價(元)": 161.25,
+            "標的證券價格(元)": 147.50,
+            "標的證券": "8150 南茂"
+        })
+
+        f = generator._f()
+        fb = generator._fb()
+        # 建立單張卡片
+        card = generator._make_single_card(row, f, fb, generator.C_LIGHT_BLUE, 250.0)
+
+        # 驗證返回的是 ReportLab Table
+        from reportlab.platypus import Table
+        assert isinstance(card, Table)
+
+        # 6行 2欄，所以單元格結構應該是 6 x 2 = 12 個
+        tbl_data = card._cellvalues
+        assert len(tbl_data) == 6
+        assert len(tbl_data[0]) == 2
+
+        # 檢驗內容中是否包含新舊指標文字
+        all_texts = []
+        for r in tbl_data:
+            for cell in r:
+                if hasattr(cell, "text"):
+                    all_texts.append(cell.text)
+                else:
+                    all_texts.append(str(cell))
+
+        # 連接所有文字進行匹配
+        combined_text = " ".join(all_texts)
+        # 1. 價內外程度：(147.5 - 161.25)/161.25 = -8.527% => 價外 8.5%
+        assert "價外 8.5%" in combined_text
+        # 2. 履約/標的價：161.25 / 147.50
+        assert "161.25 / 147.50" in combined_text
+        # 3. 剩餘期間：182 天
+        assert "182 天" in combined_text
+        # 4. 隱波與歷波：58.6% / 58.9%
+        assert "58.6% / 58.9%" in combined_text
+        # 5. Delta: 0.049
+        assert "Delta：0.049" in combined_text
+        # 6. 有效槓桿: 2.42x
+        assert "2.42x" in combined_text
+
+
 

@@ -1509,7 +1509,7 @@ class ReportGenerator:
     def _make_single_card(self, row: pd.Series, f: str, fb: str,
                            card_color, card_w: float) -> Table:
         """
-        建立單張卡片 Table（仿截圖格式）。
+        建立單張卡片 Table（仿截圖格式，已升級為 6 行 2 欄對稱排版，整合 11 大指標）。
 
         Args:
             row: DataFrame 的一列資料
@@ -1535,25 +1535,118 @@ class ReportGenerator:
         vol   = get("當日成交量", 0)
         oi    = get("未履約數", 0)
 
-        # IV/HV 顏色
+        # ── 1. 取得標的證券價格最新當日收盤價，用於價內外 Fallback ──
+        stock_p_latest = 0.0
         try:
-            iv_val = float(iv_hv)
-            iv_str = f"{iv_val:.4f}"
-            iv_color = self.C_ACCENT_GREEN if iv_val <= 1.3 else self.C_ACCENT_RED
-            iv_label = "（正常）" if iv_val <= 1.3 else "（警示）"
+            stock_name = get("標的證券", "")
+            if stock_name and stock_name != "—":
+                chips_data = self._get_chips_and_price_data(stock_name)
+                p_str = chips_data["avg_price"].replace("元", "").replace(",", "").strip()
+                stock_p_latest = float(p_str)
         except Exception:
-            iv_str = str(iv_hv)
-            iv_color = self.C_GRAY_TEXT
-            iv_label = ""
+            pass
+
+        # ── 2. 價內外程度實時公式精算與防禦 ──
+        try:
+            strike = 0.0
+            for k in ["履約價(元)", "履約價"]:
+                val = get(k, None)
+                if val != "—" and pd.notna(val):
+                    strike = float(val)
+                    break
+            
+            stock_p = 0.0
+            for k in ["標的證券價格(元)", "標的收盤價(元)", "標的價(元)", "標的收盤價"]:
+                val = get(k, None)
+                if val != "—" and pd.notna(val):
+                    try:
+                        fval = float(val)
+                        if fval > 0:
+                            stock_p = fval
+                            break
+                    except ValueError:
+                        pass
+            
+            if stock_p <= 0 and stock_p_latest > 0:
+                stock_p = stock_p_latest
+                
+            if strike > 0 and stock_p > 0:
+                diff = (stock_p - strike) / strike * 100
+                moneyness_str = f"價內 {diff:.1f}%" if diff >= 0 else f"價外 {abs(diff):.1f}%"
+            else:
+                # 嘗試讀取 row 中現成欄位
+                raw_money = get("價內外程度", None)
+                if raw_money is None or raw_money == "—":
+                    raw_money = get("價內外", "—")
+                moneyness_str = str(raw_money)
+        except Exception:
+            moneyness_str = "—"
+
+        # ── 3. 履約價 / 標的證券價格 ──
+        try:
+            strike = 0.0
+            for k in ["履約價(元)", "履約價"]:
+                val = get(k, None)
+                if val != "—" and pd.notna(val):
+                    strike = float(val)
+                    break
+            strike_str = f"{strike:.2f}" if strike > 0 else "—"
+        except Exception:
+            strike_str = "—"
 
         try:
-            delta_str = f"{float(delta):.3f}"
+            stock_p = 0.0
+            for k in ["標的證券價格(元)", "標的收盤價(元)", "標的價(元)", "標的收盤價"]:
+                val = get(k, None)
+                if val != "—" and pd.notna(val):
+                    try:
+                        fval = float(val)
+                        if fval > 0:
+                            stock_p = fval
+                            break
+                    except ValueError:
+                        pass
+            if stock_p <= 0 and stock_p_latest > 0:
+                stock_p = stock_p_latest
+            stock_p_str = f"{stock_p:.2f}" if stock_p > 0 else "—"
         except Exception:
-            delta_str = str(delta)
+            stock_p_str = "—"
+        strike_underlying_str = f"{strike_str} / {stock_p_str}"
+
+        # ── 4. 剩餘期間與波動率百分比格式化 ──
         try:
             days_str = f"{int(float(days))} 天"
         except Exception:
             days_str = str(days)
+
+        iv_val = get("隱含波動", None)
+        if iv_val == "—":
+            iv_val = get("隱含波動率", "—")
+        try:
+            iv_f = float(iv_val)
+            if abs(iv_f) <= 2.0:
+                iv_str_formatted = f"{iv_f * 100:.1f}%"
+            else:
+                iv_str_formatted = f"{iv_f:.1f}%"
+        except Exception:
+            iv_str_formatted = str(iv_val)
+
+        hv_val = get("歷史波動性", "—")
+        try:
+            hv_f = float(hv_val)
+            if abs(hv_f) <= 2.0:
+                hv_str_formatted = f"{hv_f * 100:.1f}%"
+            else:
+                hv_str_formatted = f"{hv_f:.1f}%"
+        except Exception:
+            hv_str_formatted = str(hv_val)
+        iv_hv_pair_str = f"{iv_str_formatted} / {hv_str_formatted}"
+
+        # ── 5. 原有經典指標格式化 ──
+        try:
+            delta_str = f"{float(delta):.3f}"
+        except Exception:
+            delta_str = str(delta)
         try:
             lev_str = f"{float(lev):.2f}x"
         except Exception:
@@ -1571,57 +1664,80 @@ class ReportGenerator:
         except Exception:
             oi_str = str(oi)
 
-        # 卡片內容
+        # IV/HV 比率與高亮上色
+        try:
+            iv_val = float(iv_hv)
+            iv_str = f"{iv_val:.4f}"
+            iv_color = self.C_ACCENT_GREEN if iv_val <= 1.3 else self.C_ACCENT_RED
+            iv_label = "（正常）" if iv_val <= 1.3 else "（警示）"
+        except Exception:
+            iv_str = str(iv_hv)
+            iv_color = self.C_GRAY_TEXT
+            iv_label = ""
+
+        # ── 6. 流式排版文字 Paragraph 建立 ──
+        # 統一設定 fontSize=8.0pt, leading=11
+        style_l = ParagraphStyle(
+            "card_l", fontName=f, fontSize=8.0, textColor=self.C_BLACK,
+            alignment=0, leading=11, spaceBefore=0, spaceAfter=0
+        )
+        style_r = ParagraphStyle(
+            "card_r", fontName=f, fontSize=8.0, textColor=self.C_BLACK,
+            alignment=0, leading=11, spaceBefore=0, spaceAfter=0
+        )
+        style_l_gray = ParagraphStyle(
+            "card_lg", fontName=f, fontSize=8.0, textColor=self.C_GRAY_TEXT,
+            alignment=0, leading=11, spaceBefore=0, spaceAfter=0
+        )
+
+        p_name = Paragraph(f"<b>{name}</b>", ParagraphStyle(
+            "cn", fontName=fb, fontSize=9.5, textColor=self.C_DEEP_BLUE,
+            alignment=0, leading=13, spaceBefore=0, spaceAfter=0
+        ))
+        p_code = Paragraph(f"{code}", ParagraphStyle(
+            "cc", fontName=f, fontSize=8.0, textColor=self.C_GRAY_TEXT,
+            alignment=2, leading=11, spaceBefore=0, spaceAfter=0
+        ))
+
+        p_moneyness = Paragraph(f"價內外：{moneyness_str}", style_l)
+        p_strike_underlying = Paragraph(f"履約/標的：{strike_underlying_str}", style_r)
+
+        p_maturity = Paragraph(f"天期：{days_str}", style_l)
+        p_iv_hv_pair = Paragraph(f"隱波/歷波：{iv_hv_pair_str}", style_r)
+
+        p_delta = Paragraph(f"Delta：{delta_str}", style_l)
+        p_leverage = Paragraph(f"有效槓桿：{lev_str}", style_r)
+
+        p_cost_leverage = Paragraph(f"成本槓桿：{cost_lev_str}", style_l)
+        p_vol = Paragraph(f"成交：{vol_str}", style_r)
+
+        p_oi = Paragraph(f"未履約：{oi_str}", style_l_gray)
+        p_iv_hv_ratio = Paragraph(
+            f"IV/HV：<font color='#{iv_color.hexval()[2:]}'><b>{iv_str}</b></font> {iv_label}",
+            style_r
+        )
+
+        # 組裝成 6 行 2 欄
         content = [
-            # 名稱列
-            [Paragraph(f"<b>{name}</b>", ParagraphStyle(
-                "cn", fontName=fb, fontSize=9.5, textColor=self.C_DEEP_BLUE,
-                leading=13, spaceBefore=0, spaceAfter=0
-            )),
-             Paragraph(f"{code}", ParagraphStyle(
-                "cc", fontName=f, fontSize=8, textColor=self.C_GRAY_TEXT,
-                alignment=2, leading=11, spaceBefore=0, spaceAfter=0
-            ))],
-            # Delta / 天期
-            [Paragraph(f"Delta：{delta_str}　　天期：{days_str}", ParagraphStyle(
-                "ck1", fontName=f, fontSize=8.5, textColor=self.C_BLACK,
-                leading=12, spaceBefore=0, spaceAfter=0
-            )), ""],
-            # 有效槓桿 / 溢價
-            [Paragraph(f"有效槓桿：{lev_str}　溢價：{cost_lev_str}", ParagraphStyle(
-                "ck2", fontName=f, fontSize=8.5, textColor=self.C_BLACK,
-                leading=12, spaceBefore=0, spaceAfter=0
-            )), ""],
-            # 成交量 / 未履約數
-            [Paragraph(f"成交：{vol_str}　未履約：{oi_str}", ParagraphStyle(
-                "ck3", fontName=f, fontSize=8.5, textColor=self.C_GRAY_TEXT,
-                leading=12, spaceBefore=0, spaceAfter=0
-            )), ""],
-            # IV/HV
-            [Paragraph(
-                f"IV/HV：<font color='#{iv_color.hexval()[2:]}'>{iv_str}</font>　{iv_label}",
-                ParagraphStyle(
-                    "ckiv", fontName=f, fontSize=8.5, textColor=self.C_BLACK,
-                    leading=12, spaceBefore=0, spaceAfter=0
-                )
-            ), ""],
+            [p_name, p_code],
+            [p_moneyness, p_strike_underlying],
+            [p_maturity, p_iv_hv_pair],
+            [p_delta, p_leverage],
+            [p_cost_leverage, p_vol],
+            [p_oi, p_iv_hv_ratio]
         ]
 
-        kw1 = card_w * 0.70
-        kw2 = card_w * 0.30
+        kw1 = card_w * 0.48
+        kw2 = card_w * 0.52
 
         card_tbl = Table(content, colWidths=[kw1, kw2])
         card_tbl.setStyle(TableStyle([
             ("BACKGROUND",    (0, 0), (-1, -1), card_color),
-            ("TOPPADDING",    (0, 0), (-1, -1), 3),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ("TOPPADDING",    (0, 0), (-1, -1), 2),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
             ("LEFTPADDING",   (0, 0), (-1, -1), 6),
             ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
             ("ALIGN",         (1, 0), (1, 0),   "RIGHT"),
-            ("SPAN",          (0, 1), (1, 1)),
-            ("SPAN",          (0, 2), (1, 2)),
-            ("SPAN",          (0, 3), (1, 3)),
-            ("SPAN",          (0, 4), (1, 4)),
             ("BOX",           (0, 0), (-1, -1), 0.5, self.C_BORDER),
             ("LINEBELOW",     (0, 0), (-1, 0),  0.5, self.C_BORDER),
             ("ROUNDEDCORNERS", [4, 4, 4, 4]),
