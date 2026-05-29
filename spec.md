@@ -31,6 +31,7 @@ graph TB
         V --> V2[WarrantTable 資料表格]
         V --> V3[StockSearchBar 股票搜尋]
         V --> V4[ScreenshotPanel 截圖面板]
+        V --> V5[CriteriaPanel 評價標準面板]
         C[Controller 層] --> C1[AppController 流程控制]
     end
     C1 -->|Qt Signal| V1

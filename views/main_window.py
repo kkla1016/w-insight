@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 
 from PyQt6.QtWidgets import (
-    QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
+    QMainWindow, QGroupBox, QWidget, QHBoxLayout, QVBoxLayout,
     QTabWidget, QToolBar, QStatusBar, QLabel,
     QFileDialog, QMessageBox, QSplitter, QApplication,
 )
@@ -216,6 +216,77 @@ class MainWindow(QMainWindow):
         self._screenshot_panel = ScreenshotPanel()
         self._screenshot_panel.image_changed.connect(self._on_screenshot_changed)
         layout.addWidget(self._screenshot_panel)
+
+        # 1. V1.0 (V0) 評價標準 GroupBox
+        group_v0 = QGroupBox("📊 V1.0 (V0) 權證評價標準 (滿分 100)")
+        group_v0.setStyleSheet("""
+            QGroupBox {
+                border: 1px solid #1B3A6B;
+                border-radius: 6px;
+                margin-top: 10px;
+                font-size: 8.5pt;
+                font-weight: bold;
+                color: #A0C4FF;
+                padding-top: 8px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                left: 10px;
+                padding: 0 4px;
+                background-color: #111E2E;
+            }
+        """)
+        v0_layout = QVBoxLayout(group_v0)
+        v0_layout.setContentsMargins(8, 12, 8, 8)
+        v0_text = QLabel(
+            "• <b>Delta 適切度 (25分)</b>：越接近 0.5 越高<br/>"
+            "• <b>剩餘天期 (20分)</b>：180 天以上得滿分<br/>"
+            "• <b>有效槓桿 (20分)</b>：10x 以上得滿分<br/>"
+            "• <b>IV/HV 品質 (20分)</b>：1.0 最佳，>1.5 得 0分<br/>"
+            "• <b>流動性 (15分)</b>：日成交量 1,000張得滿分"
+        )
+        v0_text.setFont(QFont("Microsoft JhengHei", 8.5))
+        v0_text.setStyleSheet("color: #BACAD6; line-height: 130%;")
+        v0_text.setTextFormat(Qt.TextFormat.RichText)
+        v0_text.setWordWrap(True)
+        v0_layout.addWidget(v0_text)
+        layout.addWidget(group_v0)
+
+        # 2. V2.0 評價標準 GroupBox
+        group_v2 = QGroupBox("🏆 V2.0 權證評價標準 (滿分 100)")
+        group_v2.setStyleSheet("""
+            QGroupBox {
+                border: 1px solid #1B3A6B;
+                border-radius: 6px;
+                margin-top: 10px;
+                font-size: 8.5pt;
+                font-weight: bold;
+                color: #F1C40F;
+                padding-top: 8px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                left: 10px;
+                padding: 0 4px;
+                background-color: #111E2E;
+            }
+        """)
+        v2_layout = QVBoxLayout(group_v2)
+        v2_layout.setContentsMargins(8, 12, 8, 8)
+        v2_text = QLabel(
+            "• <b>A. 現股結構 (25分)</b>：基礎 15分 + ROI 加分<br/>"
+            "• <b>B. 權證品質 (35分)</b>：基礎 25分 + IV/HV 抄擺<br/>"
+            "• <b>C. 爆發能力 (20分)</b>：Delta 區間 + G/T 比值<br/>"
+            "• <b>D. 交易安全 (20分)</b>：天期 >= 90天 + 成交金額"
+        )
+        v2_text.setFont(QFont("Microsoft JhengHei", 8.5))
+        v2_text.setStyleSheet("color: #BACAD6; line-height: 130%;")
+        v2_text.setTextFormat(Qt.TextFormat.RichText)
+        v2_text.setWordWrap(True)
+        v2_layout.addWidget(v2_text)
+        layout.addWidget(group_v2)
 
         layout.addStretch()
 
