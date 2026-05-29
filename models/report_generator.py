@@ -609,11 +609,51 @@ class ReportGenerator:
         v2_atk_ranks = get_ranks(class_a)
         v2_std_ranks = get_ranks(class_b)
 
-        # 3. 按推薦評分降序排列輸出
+        # 先行解析出「日均價 DATA」最新當日收盤價數值以供公式使用，雙重保障百分之百精確
+        stock_p_latest = 0.0
+        try:
+            chips_data = self._get_chips_and_price_data(stock_name, phase1, phase2)
+            p_str = chips_data["avg_price"].replace("元", "").replace(",", "").strip()
+            stock_p_latest = float(p_str)
+        except Exception:
+            pass
+
+        # 價內外程度百分比輔助計算（用於排序，價外為負，價內為正/零）
+        def get_moneyness_diff(row):
+            try:
+                strike = 0.0
+                for k in ["履約價(元)", "履約價"]:
+                    if k in row and pd.notna(row[k]):
+                        strike = float(row[k])
+                        break
+                
+                stock_p = 0.0
+                for k in ["標的證券價格(元)", "標的收盤價(元)", "標的價(元)", "標的收盤價"]:
+                    if k in row and pd.notna(row[k]):
+                        try:
+                            val = float(row[k])
+                            if val > 0:
+                                stock_p = val
+                                break
+                        except ValueError:
+                            pass
+                if stock_p <= 0 and stock_p_latest > 0:
+                    stock_p = stock_p_latest
+                    
+                if strike > 0 and stock_p > 0:
+                    return (stock_p - strike) / strike * 100
+            except Exception:
+                pass
+            return float('inf')  # 若算不出則排在最後面
+
+        # 3. 按價內外程度排序：先價外(高到低，即負值由小到大)，後價內(低到高，即正值由小到大)
+        # 排序鍵：(價內外比率 diff 升序, 推薦評分降序)
         sorted_warrants = sorted(
             all_warrants.values(),
-            key=lambda r: float(r.get("推薦評分", 0.0) if pd.notna(r.get("推薦評分", 0.0)) else 0.0),
-            reverse=True
+            key=lambda r: (
+                get_moneyness_diff(r),
+                -float(r.get("推薦評分", 0.0) if pd.notna(r.get("推薦評分", 0.0)) else 0.0)
+            )
         )
 
         # 4. 新增區塊標題
@@ -638,15 +678,6 @@ class ReportGenerator:
             Paragraph("V1 排名<br/>(建倉/加碼)", hdr_style),
             Paragraph("V2 排名<br/>(主力/穩健)", hdr_style),
         ]
-
-        # 先行解析出「日均價 DATA」最新當日收盤價數值以供公式使用，雙重保障百分之百精確
-        stock_p_latest = 0.0
-        try:
-            chips_data = self._get_chips_and_price_data(stock_name, phase1, phase2)
-            p_str = chips_data["avg_price"].replace("元", "").replace(",", "").strip()
-            stock_p_latest = float(p_str)
-        except Exception:
-            pass
 
         rows_data = [headers]
 
