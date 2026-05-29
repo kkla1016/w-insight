@@ -275,7 +275,10 @@ class WarrantFilter:
     def search_by_stock(self, df: pd.DataFrame, query: str) -> pd.DataFrame:
         """
         依標的證券名稱或代號進行模糊搜尋。
-        支援極致空格容錯：將標的證券與搜尋詞去除所有空白字元後再行包含匹配。
+        支援極致雙向包含與空格容錯：
+        1. 去除所有空格比對。
+        2. 當標的證券簡稱包含於 query 之中，或 query 包含於簡稱之中時，皆判定為成功匹配。
+        這能完美相容名單寫「欣興電子」但資料庫叫「欣興」的情況。
 
         Args:
             df: 預處理後的 DataFrame
@@ -288,13 +291,24 @@ class WarrantFilter:
         # 去除搜尋詞中的所有空白
         q_clean = re.sub(r"\s+", "", q)
         
-        # 建立去空格後的標的證券與代號欄位進行匹配
+        # 建立去空格後的標的證券與代號欄位
         target_series_clean = df["標的證券"].astype(str).str.replace(r"\s+", "", regex=True)
         warrant_code_clean = df["代號"].astype(str).str.replace(r"\s+", "", regex=True)
         
+        # 提取標的證券的純中文名稱（簡稱），即去除數字代碼與英文字母特殊符號
+        # 例如 "3037欣興" -> "欣興", "2481強茂" -> "強茂"
+        name_series = target_series_clean.str.replace(r"[\d\sA-Za-z\-\*\.]+", "", regex=True)
+        
+        # 雙向模糊匹配 mask：
+        # 1. 標的證券完整去空格名稱包含 q_clean
+        # 2. 或者 q_clean 包含 標的證券中文簡稱（解決 欣興電子 匹配 欣興）
+        # 3. 或者 標的證券中文簡稱 包含 q_clean
+        # 4. 或者 代號包含 q_clean
         mask = (
             target_series_clean.str.contains(q_clean, na=False, case=False) |
-            warrant_code_clean.str.contains(q_clean, na=False, case=False)
+            warrant_code_clean.str.contains(q_clean, na=False, case=False) |
+            (name_series.apply(lambda x: x != "" and x in q_clean)) |
+            (name_series.str.contains(q_clean, na=False, case=False))
         )
         return df[mask].copy()
 

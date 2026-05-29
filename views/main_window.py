@@ -444,6 +444,10 @@ class MainWindow(QMainWindow):
             
     def _on_batch_done(self, count: int, target_dir: str) -> None:
         """批次完成槽函數：詢問是否跳轉直達該日期子資料夾"""
+        # 讀取被跳過的股票清單
+        skipped = self._ctrl.get_last_batch_skipped_stocks()
+        self._skipped_info = f"\n\n（注意：有 {len(skipped)} 檔股票在資料庫中查無認購權證而被安全跳過：\n{', '.join(skipped)}）" if skipped else ""
+
         if hasattr(self, '_progress_dialog') and self._progress_dialog:
             self._progress_dialog.setValue(100)
             self._progress_dialog.close()
@@ -451,7 +455,7 @@ class MainWindow(QMainWindow):
             
         reply = QMessageBox.question(
              self, "批次匯出完成",
-             f"批次輸出結束！\n已成功為 {count} 檔股票建立雙版本 PDF 報告書。\n\n是否開啟當日日期資料夾？\n{Path(target_dir).name}",
+             f"批次輸出結束！\n已成功為 {count} 檔股票建立雙版本 PDF 報告書。{self._skipped_info}\n\n是否開啟當日日期資料夾？\n{Path(target_dir).name}",
              QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:

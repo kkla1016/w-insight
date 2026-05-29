@@ -67,6 +67,7 @@ class AppController(QObject):
         self._screenshot_path: str | None = None       # 日K截圖暫存路徑
         self._current_stock_query: str = ""            # 目前搜尋關鍵字
         self._batch_cancelled: bool = False
+        self._last_batch_skipped_stocks: list[str] = []  # 記錄上次批次被跳過的股票
 
 
     # ── 公開方法 ───────────────────────────────────────────────
@@ -551,6 +552,7 @@ class AppController(QObject):
             
         # 3. 啟動批次迴圈
         self._batch_cancelled = False
+        self._last_batch_skipped_stocks = []  # 開始時清空跳過清單
         total = len(stock_list)
         success_count = 0
         
@@ -570,6 +572,7 @@ class AppController(QObject):
                 # 若完全找不到該股資料，則跳過，防止產生空白 PDF 報告
                 if base_df.empty:
                     print(f"[批次匯出] 股票「{stock}」在主力 Excel 資料庫中查無資料，跳過。")
+                    self._last_batch_skipped_stocks.append(stock)  # 記錄被跳過的股票
                     continue
                     
                 # 執行個股篩選與排序
@@ -618,4 +621,8 @@ class AppController(QObject):
         if not self._batch_cancelled:
             self.batch_done.emit(success_count, str(target_dir.resolve()))
             self.status_message.emit(f"批次匯出完成，成功共 {success_count}/{total} 檔！路徑：{target_dir.name}")
+
+    def get_last_batch_skipped_stocks(self) -> list[str]:
+        """回傳上次批次導出中被跳過的股票名單"""
+        return self._last_batch_skipped_stocks
 
