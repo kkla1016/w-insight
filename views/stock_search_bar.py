@@ -100,8 +100,9 @@ class StockSearchBar(QWidget):
         return self._input.text().strip()
 
     def _on_text_changed(self, text: str) -> None:
-        """輸入變更時即時觸發搜尋（不自動開瀏覽器）"""
-        self.search_triggered.emit(text.strip(), False)
+        """輸入變更時（僅在文字被完全清空時自動觸發清除回到全市場模式，杜絕打字卡頓）"""
+        if not text.strip():
+            self.search_triggered.emit("", False)
 
     def _on_search(self) -> None:
         """按 Enter 時觸發搜尋（開啟瀏覽器）"""
