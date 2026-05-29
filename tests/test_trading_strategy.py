@@ -163,3 +163,39 @@ class TestReportGeneratorChips:
         assert "38.50" in data["avg_price"]
         assert "+1234" in data["net_buy"]
         assert "28.45" in data["foreign_ratio"]
+
+    def test_comprehensive_comparison_table_generation(self, generator):
+        """測試綜合大評比與排名整理表格的生成邏輯，確認能處理聯集與正確格式化指標"""
+        import pandas as pd
+        
+        # 建立測試用的 DataFrame
+        phase1 = pd.DataFrame([{
+            "代號": "03001P", "名稱": "南茂凱基01", "隱含波動": 45.2, "價內外": "價外 5.3%",
+            "剩餘期間(日)": 115, "有效槓桿": 5.8, "流通在外比例(%)": 25.4, "未履約數": 500,
+            "當日成交量": 120, "推薦評分": 85.5, "排名": 1
+        }])
+        
+        class_a = pd.DataFrame([{
+            "代號": "03001P", "名稱": "南茂凱基01", "隱含波動": 45.2, "價內外": "價外 5.3%",
+            "剩餘期間(日)": 115, "有效槓桿": 5.8, "流通在外比例(%)": 25.4, "未履約數": 500,
+            "當日成交量": 120, "推薦評分": 85.5, "排名": 2
+        }])
+        
+        styles = generator._build_styles()
+        elements = generator._build_comprehensive_comparison_table(
+            styles=styles,
+            stock_name="8150 南茂",
+            phase1=phase1,
+            class_a=class_a
+        )
+        
+        # 驗證返回了 Flowables 列表且包含 Table
+        assert len(elements) > 0
+        from reportlab.platypus import Table
+        tables = [el for el in elements if isinstance(el, Table)]
+        assert len(tables) == 1
+        
+        # 驗證 Table 資料內容：有 1 個表頭行 + 1 個資料行 = 2 行
+        tbl_data = tables[0]._cellvalues
+        assert len(tbl_data) == 2
+

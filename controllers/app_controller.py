@@ -75,8 +75,11 @@ class AppController(QObject):
         folder = Path(folder_path)
         if not folder.exists() or not folder.is_dir():
             return None
-        # 尋找 xlsx 和 xls
-        files = list(folder.glob("*.xlsx")) + list(folder.glob("*.xls"))
+        # 自動排除 Microsoft Excel 產生的以 ~$ 開頭之隱藏鎖定暫存檔
+        files = [
+            f for f in list(folder.glob("*.xlsx")) + list(folder.glob("*.xls"))
+            if not f.name.startswith("~$")
+        ]
         if not files:
             return None
         # 依最後修改時間排序，返回最新修改的檔案路徑
@@ -294,6 +297,8 @@ class AppController(QObject):
                 screenshot_path=self._screenshot_path,
                 stock_name=stock_name,
                 output_path=fp,
+                class_a=self._v2_class_a,
+                class_b=self._v2_class_b,
             )
             self.export_done.emit(saved_path)
             self.status_message.emit(f"PDF 報告已儲存：{Path(saved_path).name}")
@@ -320,6 +325,8 @@ class AppController(QObject):
                 screenshot_path=self._screenshot_path,
                 stock_name=self._current_stock_query,
                 output_path=preview_path_v1,
+                class_a=self._v2_class_a,
+                class_b=self._v2_class_b,
             )
             self.pdf_preview_ready.emit(saved_path_v1)
         except Exception as e:
@@ -335,6 +342,8 @@ class AppController(QObject):
                 screenshot_path=self._screenshot_path,
                 stock_name=self._current_stock_query,
                 output_path=preview_path_v2,
+                phase1=self._phase1,
+                phase2=self._phase2,
             )
             self.pdf_v2_preview_ready.emit(saved_path_v2)
         except Exception as e:

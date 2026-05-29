@@ -124,6 +124,8 @@ class ReportGenerator:
         stock_name: str,
         report_date: str | None = None,
         output_path: str | None = None,
+        class_a: pd.DataFrame = None,
+        class_b: pd.DataFrame = None,
     ) -> str:
         """
         生成完整 PDF 報告書（仿專業金融報告格式）。
@@ -136,6 +138,8 @@ class ReportGenerator:
             stock_name: 分析標的名稱（空字串表示全市場）
             report_date: 報告日期字串，None 時用今日
             output_path: 輸出路徑，None 時自動依股票名+時間戳產生
+            class_a: 可選，V2 A級主力攻擊 DataFrame
+            class_b: 可選，V2 B級穩健趨勢 DataFrame
 
         Returns:
             已儲存的 PDF 絕對路徑字串
@@ -170,6 +174,11 @@ class ReportGenerator:
         # 新增：籌碼與技術面數據區塊 (僅在個股模式下顯示)
         if stock_name and stock_name != "全市場":
             story += self._build_chips_and_price_block(styles, stock_name)
+            story.append(Spacer(1, 0.4 * cm))
+            # 新增：符合條件之權證綜合大評比與排名整理表
+            story += self._build_comprehensive_comparison_table(
+                styles, stock_name, phase1, phase2, class_a, class_b
+            )
             story.append(Spacer(1, 0.4 * cm))
 
         # ② 日K截圖
@@ -215,6 +224,8 @@ class ReportGenerator:
         screenshot_path: str | None = None,
         stock_name: str = "",
         output_path: str = "v2_report.pdf",
+        phase1: pd.DataFrame = None,
+        phase2: pd.DataFrame = None,
     ) -> str:
         """生成 V2.0 完整 PDF 報告書"""
         report_date = datetime.now().strftime("%Y/%m/%d")
@@ -239,6 +250,11 @@ class ReportGenerator:
         # 新增：籌碼與技術面數據區塊 (僅在個股模式下顯示)
         if stock_name and stock_name != "全市場":
             story += self._build_chips_and_price_block(styles, stock_name)
+            story.append(Spacer(1, 0.4 * cm))
+            # 新增：符合條件之權證綜合大評比與排名整理表
+            story += self._build_comprehensive_comparison_table(
+                styles, stock_name, phase1, phase2, class_a, class_b
+            )
             story.append(Spacer(1, 0.4 * cm))
 
         # ② 日K截圖
@@ -301,7 +317,11 @@ class ReportGenerator:
         folder = Path(folder_path)
         if not folder.exists() or not folder.is_dir():
             return None
-        files = list(folder.glob("*.xlsx")) + list(folder.glob("*.xls"))
+        # 自動排除 Microsoft Excel 產生的以 ~$ 開頭之隱藏鎖定暫存檔
+        files = [
+            f for f in list(folder.glob("*.xlsx")) + list(folder.glob("*.xls"))
+            if not f.name.startswith("~$")
+        ]
         if not files:
             return None
         try:
@@ -536,6 +556,215 @@ class ReportGenerator:
             ("BACKGROUND", (3, 1), (3, 1), badge_bg),
         ]))
 
+        elements.append(tbl)
+        return elements
+
+    def _build_comprehensive_comparison_table(
+        self,
+        styles,
+        stock_name: str,
+        phase1: pd.DataFrame = None,
+        phase2: pd.DataFrame = None,
+        class_a: pd.DataFrame = None,
+        class_b: pd.DataFrame = None,
+    ) -> list:
+        """
+        繪製「🎯 符合條件之權證綜合大評比與排名整理表」區塊。
+        將符合 V1/V2 策略的所有權證取聯集，計算交叉排名，並展現 10 大指標維度。
+        """
+        f = self._f()
+        fb = self._fb()
+        cw = self.CONTENT_W
+        elements = []
+
+        # 1. 聯集所有符合條件的權證代號，複製其原始行以獲取物理欄位
+        all_warrants = {}
+        for name, df in [("V1建倉", phase1), ("V1加碼", phase2), ("V2主力", class_a), ("V2穩健", class_b)]:
+            if df is not None and not df.empty and "代號" in df.columns:
+                for _, row in df.iterrows():
+                    code = str(row["代號"])
+                    if code not in all_warrants:
+                        all_warrants[code] = row.to_dict()
+                    # 補全推薦評分，若某些 df 沒有算則默認 0
+                    if "推薦評分" not in all_warrants[code] and "推薦評分" in row:
+                        all_warrants[code]["推薦評分"] = row["推薦評分"]
+
+        # 若聯集為空，則不顯示此區塊
+        if not all_warrants:
+            return elements
+
+        # 2. 獲取四大策略的交叉名次
+        def get_ranks(df):
+            ranks = {}
+            if df is not None and not df.empty and "代號" in df.columns:
+                use_col = "排名" in df.columns
+                for idx, (_, r) in enumerate(df.iterrows()):
+                    code = str(r["代號"])
+                    ranks[code] = str(r["排名"]) if use_col else str(idx + 1)
+            return ranks
+
+        v1_buy_ranks = get_ranks(phase1)
+        v1_add_ranks = get_ranks(phase2)
+        v2_atk_ranks = get_ranks(class_a)
+        v2_std_ranks = get_ranks(class_b)
+
+        # 3. 按推薦評分降序排列，取前 10 筆最優權證 (限流防 PDF 溢出)
+        sorted_warrants = sorted(
+            all_warrants.values(),
+            key=lambda r: float(r.get("推薦評分", 0.0) if pd.notna(r.get("推薦評分", 0.0)) else 0.0),
+            reverse=True
+        )[:10]
+
+        # 4. 新增區塊標題
+        elements.append(Paragraph(
+            "<b>🎯 符合條件之權證綜合大評比與排名整理表</b>",
+            styles["section_hdr"]
+        ))
+        elements.append(Spacer(1, 0.15 * cm))
+
+        # 表頭文字樣式
+        hdr_style = ParagraphStyle("comp_hdr", fontName=fb, fontSize=7.5, textColor=self.C_WHITE, alignment=1)
+        cell_style = ParagraphStyle("comp_cell", fontName=f, fontSize=7.5, textColor=self.C_BLACK, alignment=1, leading=10)
+
+        # 建立表頭
+        headers = [
+            Paragraph("權證標的<br/>(代號/簡稱)", hdr_style),
+            Paragraph("隱含波動<br/>(IV)", hdr_style),
+            Paragraph("價內外<br/>程度", hdr_style),
+            Paragraph("天期/槓桿", hdr_style),
+            Paragraph("流動性與造市品質<br/>(流通比/庫存量)", hdr_style),
+            Paragraph("當日<br/>成交", hdr_style),
+            Paragraph("V1 排名<br/>(建倉/加碼)", hdr_style),
+            Paragraph("V2 排名<br/>(主力/穩健)", hdr_style),
+        ]
+
+        rows_data = [headers]
+
+        for row in sorted_warrants:
+            code = str(row.get("代號", ""))
+            name = str(row.get("名稱", ""))
+            
+            # 權證標的
+            cell_target = Paragraph(f"<b>{code}</b><br/>{name}", cell_style)
+            
+            # 隱含波動
+            iv_val = row.get("隱含波動", 0)
+            try:
+                iv_f = float(iv_val)
+                iv_str = f"{iv_f * 100:.1f}%" if iv_f < 1.0 else f"{iv_f:.1f}%"
+            except Exception:
+                iv_str = str(iv_val) if pd.notna(iv_val) else "—"
+            cell_iv = Paragraph(iv_str, cell_style)
+            
+            # 價內外程度
+            m_val = row.get("價內外", "")
+            if pd.isna(m_val) or not str(m_val).strip():
+                # 若無價內外文字，利用公式計算
+                try:
+                    strike = float(row.get("履約價(元)", 0))
+                    stock_p = float(row.get("標的證券價格(元)", 0))
+                    if strike > 0 and stock_p > 0:
+                        diff = (stock_p - strike) / strike * 100
+                        m_str = f"價內 {diff:.1f}%" if diff >= 0 else f"價外 {abs(diff):.1f}%"
+                    else:
+                        m_str = "—"
+                except Exception:
+                    m_str = "—"
+            else:
+                m_str = str(m_val).strip()
+            cell_moneyness = Paragraph(m_str, cell_style)
+            
+            # 天期 / 槓桿
+            try:
+                days = int(float(row.get("剩餘期間(日)", 0)))
+                days_str = f"{days}天"
+            except Exception:
+                days_str = "—"
+            try:
+                lev = float(row.get("有效槓桿", 0))
+                lev_str = f"{lev:.2f}x"
+            except Exception:
+                lev_str = "—"
+            cell_maturity_gearing = Paragraph(f"{days_str} / {lev_str}", cell_style)
+            
+            # 流動性與造市品質 (流通比/庫存)
+            try:
+                out_ratio = float(row.get("流通在外比例(%)", 0))
+                out_str = f"流通: {out_ratio:.1f}%"
+            except Exception:
+                out_str = "流通: —"
+                out_ratio = 0.0
+            try:
+                oi = int(float(row.get("未履約數", 0)))
+                oi_str = f"庫存: {oi:,}張"
+            except Exception:
+                oi_str = "庫存: —"
+            
+            # 依造市指標做顏色警示：流通比 > 80% 標紅
+            is_warn = False
+            try:
+                if out_ratio > 80:
+                    is_warn = True
+            except Exception:
+                pass
+            
+            liquidity_text = f"{out_str}<br/>{oi_str}"
+            if is_warn:
+                liquidity_text = f"<font color='{self.C_ACCENT_RED.hexval()}'>{out_str} (警示)</font><br/>{oi_str}"
+            cell_liquidity = Paragraph(liquidity_text, cell_style)
+            
+            # 當日成交量
+            try:
+                vol = int(float(row.get("當日成交量", 0)))
+                vol_str = f"{vol}張"
+            except Exception:
+                vol_str = "—"
+            cell_vol = Paragraph(vol_str, cell_style)
+            
+            # V1 排名
+            v1_buy = v1_buy_ranks.get(code, "—")
+            v1_add = v1_add_ranks.get(code, "—")
+            v1_buy_f = f"<font color='{self.C_DEEP_BLUE.hexval()}'><b>建倉: {v1_buy}</b></font>" if v1_buy != "—" else "建倉: —"
+            v1_add_f = f"<font color='{self.C_MID_BLUE.hexval()}'><b>加碼: {v1_add}</b></font>" if v1_add != "—" else "加碼: —"
+            cell_v1 = Paragraph(f"{v1_buy_f}<br/>{v1_add_f}", cell_style)
+            
+            # V2 排名
+            v2_atk = v2_atk_ranks.get(code, "—")
+            v2_std = v2_std_ranks.get(code, "—")
+            v2_atk_f = f"<font color='{self.C_ACCENT_RED.hexval()}'><b>主力: {v2_atk}</b></font>" if v2_atk != "—" else "主力: —"
+            v2_std_f = f"<font color='{self.C_ACCENT_GREEN.hexval()}'><b>穩健: {v2_std}</b></font>" if v2_std != "—" else "穩健: —"
+            cell_v2 = Paragraph(f"{v2_atk_f}<br/>{v2_std_f}", cell_style)
+            
+            rows_data.append([
+                cell_target, cell_iv, cell_moneyness, cell_maturity_gearing,
+                cell_liquidity, cell_vol, cell_v1, cell_v2
+            ])
+
+        # 5. 繪製 Table
+        # A4 CONTENT_W 大約是 510 pt
+        # 欄寬精確分配：權證標的(65), 隱含波動(40), 價內外(50), 天期槓桿(55), 流動性(115), 當日成交(45), V1排名(70), V2排名(70) => 總共 505pt
+        col_widths = [65, 40, 50, 55, 115, 45, 70, 70]
+        
+        tbl = Table(rows_data, colWidths=col_widths, repeatRows=1)
+        
+        # 建立交替背景色
+        tbl_styles = [
+            ("BACKGROUND", (0, 0), (-1, 0), self.C_DEEP_BLUE),
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ("LEFTPADDING", (0, 0), (-1, -1), 4),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+            ("GRID", (0, 0), (-1, -1), 0.3, self.C_BORDER),
+            ("BOX", (0, 0), (-1, -1), 0.5, self.C_BORDER),
+        ]
+        
+        for i in range(1, len(rows_data)):
+            bg = self.C_LIGHT_GRAY if i % 2 == 1 else self.C_WHITE
+            tbl_styles.append(("BACKGROUND", (0, i), (-1, i), bg))
+            
+        tbl.setStyle(TableStyle(tbl_styles))
         elements.append(tbl)
         return elements
 
