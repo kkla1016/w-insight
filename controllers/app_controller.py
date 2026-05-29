@@ -39,6 +39,8 @@ class AppController(QObject):
     pdf_v2_preview_ready = pyqtSignal(str)          # V2 PDF 路徑
     v2_class_a_updated= pyqtSignal(object)          # V2 A級 DataFrame
     v2_class_b_updated= pyqtSignal(object)          # V2 B級 DataFrame
+    batch_progress    = pyqtSignal(int, int, str)   # (目前處理數, 總數, 目前股票名稱)
+    batch_done        = pyqtSignal(int, str)        # (成功匯出總數, 自動日期資料夾路徑)
 
     def __init__(self, config: ConfigManager, parent=None):
         """
@@ -64,6 +66,8 @@ class AppController(QObject):
         self._v2_class_b:  pd.DataFrame = pd.DataFrame()       # V2 B級
         self._screenshot_path: str | None = None       # 日K截圖暫存路徑
         self._current_stock_query: str = ""            # 目前搜尋關鍵字
+        self._batch_cancelled: bool = False
+
 
     # ── 公開方法 ───────────────────────────────────────────────
 
@@ -457,3 +461,161 @@ class AppController(QObject):
             f"加碼推薦：{len(self._phase2)} 筆 | "
             f"IV警示：{len(self._warnings)} 筆"
         )
+
+    def cancel_batch_pdf(self) -> None:
+        """使用者點選取消時，安全地中斷批次進程"""
+        self._batch_cancelled = True
+        self.status_message.emit("批次匯出已由使用者取消。")
+
+    def _parse_batch_stock_list(self, file_path: str) -> list[str]:
+        """
+        智慧解析股票名單 Excel 檔案，模糊匹配常見列名，
+        若無則自動取第一欄 (Column 0) 作為降級容錯，去重去空去空格。
+        """
+        import pandas as pd
+        if not file_path or not os.path.exists(file_path):
+            raise FileNotFoundError(f"名單 Excel 檔案不存在：{file_path}")
+            
+        df = pd.read_excel(file_path)
+        if df.empty:
+            return []
+            
+        target_col = None
+        # 優先模糊匹配列名
+        keywords = ["股票", "名稱", "代號", "證券"]
+        is_matched_header = False
+        for col in df.columns:
+            col_str = str(col)
+            if any(k in col_str for k in keywords):
+                target_col = col
+                is_matched_header = True
+                break
+                
+        # 降級容錯：若無匹配列名，直接取第一欄
+        if target_col is None:
+            target_col = df.columns[0]
+            
+        # 提取資料
+        raw_list = df[target_col].dropna().astype(str).tolist()
+        
+        # 若是降級容錯（即列名不包含關鍵字，表示可能沒有 header），將列名本身也當作第一筆資料
+        if not is_matched_header:
+            raw_list.insert(0, str(target_col))
+        
+        # 乾淨去重與去空格清理
+        cleaned = []
+        seen = set()
+        for s in raw_list:
+            s_clean = s.strip()
+            if s_clean and s_clean not in seen:
+                seen.add(s_clean)
+                cleaned.append(s_clean)
+                
+        return cleaned
+
+    def export_batch_pdf(self) -> None:
+        """
+        批次匯出 PDF 報告書（原版與 V2.0 版）。
+        自動在配置之 output_dir 下建立以當日日期為命名的資料夾，
+        智慧讀取 batch_stock_excel 名單，並迴圈各個股執行篩選與 PDF 輸出。
+        """
+        if self._raw_df is None:
+            self.error_occurred.emit("尚無篩選資料，請先載入 Excel。")
+            return
+            
+        batch_excel = self._config.get_batch_stock_excel()
+        if not batch_excel or not os.path.exists(batch_excel):
+            self.error_occurred.emit("請先在設定中指定『批次輸出股票名單EXCEL檔案』路徑。")
+            return
+            
+        # 1. 智慧解析股票名單
+        try:
+            stock_list = self._parse_batch_stock_list(batch_excel)
+        except Exception as e:
+            self.error_occurred.emit(f"讀取名單 Excel 失敗：{e}")
+            return
+            
+        if not stock_list:
+            self.error_occurred.emit("股票名單 Excel 內無有效數據。")
+            return
+            
+        # 2. 自動在預設 output_dir 下建立當日日期子資料夾
+        default_out = self._config.get_output_dir()
+        today_str = datetime.now().strftime("%Y%m%d")
+        target_dir = Path(default_out) / today_str
+        try:
+            target_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            self.error_occurred.emit(f"無法建立日期資料夾「{target_dir}」：{e}")
+            return
+            
+        # 3. 啟動批次迴圈
+        self._batch_cancelled = False
+        total = len(stock_list)
+        success_count = 0
+        
+        self.status_message.emit(f"開始批次處理 (共 {total} 檔)...")
+        
+        for idx, stock in enumerate(stock_list):
+            if self._batch_cancelled:
+                break
+                
+            # 發送進度訊號供視窗 QProgressDialog 渲染更新
+            self.batch_progress.emit(idx + 1, total, stock)
+            
+            try:
+                # 智慧模擬「個股分析模式」的過濾流程
+                base_df = self._filter.search_by_stock(self._raw_df, stock)
+                
+                # 若完全找不到該股資料，則跳過，防止產生空白 PDF 報告
+                if base_df.empty:
+                    print(f"[批次匯出] 股票「{stock}」在主力 Excel 資料庫中查無資料，跳過。")
+                    continue
+                    
+                # 執行個股篩選與排序
+                p1 = self._filter.filter_stock_phase1(base_df)
+                p2 = self._filter.filter_stock_phase2(base_df)
+                warns = self._filter.detect_stock_iv_warnings(base_df)
+                c_a = self._filter.filter_v2_class_a(base_df)
+                c_b = self._filter.filter_v2_class_b(base_df)
+                
+                # 自動建立輸出檔名
+                import re
+                safe_stock = re.sub(r'[\\/:*?"<>|]', '', stock)
+                fp_v1 = str(target_dir / f"warrant_report_{safe_stock}.pdf")
+                fp_v2 = str(target_dir / f"warrant_report_v2_{safe_stock}.pdf")
+                
+                # 產生雙版本報告書
+                self._report.generate_report(
+                    phase1=p1,
+                    phase2=p2,
+                    warnings=warns,
+                    screenshot_path=None,
+                    stock_name=stock,
+                    output_path=fp_v1,
+                    class_a=c_a,
+                    class_b=c_b,
+                )
+                
+                self._report.generate_v2_report(
+                    class_a=c_a,
+                    class_b=c_b,
+                    warnings=warns,
+                    screenshot_path=None,
+                    stock_name=stock,
+                    output_path=fp_v2,
+                    phase1=p1,
+                    phase2=p2,
+                )
+                
+                success_count += 1
+                
+            except Exception as e:
+                # 智慧異常隔離：捕獲個股編譯錯誤，記錄日誌，絕不影響批次其它股票的生成！
+                print(f"[批次匯出] 生成股票「{stock}」PDF 報告失敗：{e}")
+                
+        # 4. 結束處理
+        if not self._batch_cancelled:
+            self.batch_done.emit(success_count, str(target_dir.resolve()))
+            self.status_message.emit(f"批次匯出完成，成功共 {success_count}/{total} 檔！路徑：{target_dir.name}")
+

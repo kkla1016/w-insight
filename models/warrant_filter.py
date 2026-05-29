@@ -275,15 +275,26 @@ class WarrantFilter:
     def search_by_stock(self, df: pd.DataFrame, query: str) -> pd.DataFrame:
         """
         依標的證券名稱或代號進行模糊搜尋。
+        支援極致空格容錯：將標的證券與搜尋詞去除所有空白字元後再行包含匹配。
 
         Args:
             df: 預處理後的 DataFrame
         """
-        # 依股票名稱或代號搜尋，僅回傳完全包含關鍵字的資料
+        import re
         q = str(query).strip()
+        if not q:
+            return df.copy()
+            
+        # 去除搜尋詞中的所有空白
+        q_clean = re.sub(r"\s+", "", q)
+        
+        # 建立去空格後的標的證券與代號欄位進行匹配
+        target_series_clean = df["標的證券"].astype(str).str.replace(r"\s+", "", regex=True)
+        warrant_code_clean = df["代號"].astype(str).str.replace(r"\s+", "", regex=True)
+        
         mask = (
-            df["標的證券"].str.contains(q, na=False, case=False) |
-            df["代號"].str.contains(q, na=False, case=False)
+            target_series_clean.str.contains(q_clean, na=False, case=False) |
+            warrant_code_clean.str.contains(q_clean, na=False, case=False)
         )
         return df[mask].copy()
 

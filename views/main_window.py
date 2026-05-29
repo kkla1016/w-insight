@@ -131,9 +131,10 @@ class MainWindow(QMainWindow):
         self._act_csv     = make_action("匯出 CSV",   "📊", "匯出三階段結果為 CSV 檔案", self._on_export_csv)
         self._act_excel   = make_action("匯出 Excel", "📋", "匯出為多分頁 Excel 檔案",   self._on_export_excel)
         self._act_pdf     = make_action("匯出 PDF 報告", "📄", "生成含截圖的完整分析報告書", self._on_export_pdf)
+        self._act_batch_pdf = make_action("批次匯出 PDF 報告", "📦", "一鍵依 Excel 名單全自動分類輸出", self._on_export_batch_pdf)
         self._act_refresh = make_action("重新整理",   "🔄", "重新載入並分析資料",         self._on_refresh)
 
-        for act in [self._act_load, self._act_csv, self._act_excel, self._act_pdf, self._act_refresh]:
+        for act in [self._act_load, self._act_csv, self._act_excel, self._act_pdf, self._act_batch_pdf, self._act_refresh]:
             self._style_action(act)
             tb.addAction(act)
             tb.addSeparator()
@@ -356,6 +357,9 @@ class MainWindow(QMainWindow):
         self._ctrl.status_message.connect(self._update_status)
         self._ctrl.error_occurred.connect(self._show_error)
         self._ctrl.export_done.connect(self._on_export_done)
+        self._ctrl.batch_progress.connect(self._on_batch_progress)
+        self._ctrl.batch_done.connect(self._on_batch_done)
+
 
     # ── 事件處理 ──────────────────────────────────────────────
 
@@ -395,12 +399,64 @@ class MainWindow(QMainWindow):
 
     def _on_export_pdf(self) -> None:
         """匯出 PDF 報告書"""
-        out_dir = QFileDialog.getExistingDirectory(self, "選擇 PDF 儲存目錄", ".")
+        default_dir = self._ctrl._config.get_output_dir()
+        out_dir = QFileDialog.getExistingDirectory(self, "選擇 PDF 儲存目錄", default_dir)
         if out_dir:
             self._ctrl.export_pdf(
                 stock_name=self._current_stock_name,
                 output_dir=out_dir,
             )
+
+    def _on_export_batch_pdf(self) -> None:
+        """一鍵批次全自動匯出報告書，跳過手動目錄指定，直接觸發自動日期建檔"""
+        from PyQt6.QtWidgets import QProgressDialog
+        
+        # 1. 安全檢查：是否有指定名單與輸出資料夾
+        batch_excel = self._ctrl._config.get_batch_stock_excel()
+        if not batch_excel or not os.path.exists(batch_excel):
+            self._show_error("請先在『Excel 檔案路徑設定』中指定『批次輸出股票名單EXCEL檔案』位置。")
+            return
+            
+        # 2. 建立並彈出 QProgressDialog
+        self._progress_dialog = QProgressDialog("正在準備批次匯出 PDF 報告書...", "取消", 0, 100, self)
+        self._progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
+        self._progress_dialog.setWindowTitle("批次匯出 PDF 報告書")
+        self._progress_dialog.setMinimumDuration(0)
+        self._progress_dialog.setValue(0)
+        self._progress_dialog.show()
+        
+        # 3. 呼叫控制器執行批次
+        self._ctrl.export_batch_pdf()
+        
+    def _on_batch_progress(self, current: int, total: int, stock_name: str) -> None:
+        """批次進度槽函數：即時刷新流暢進度條，並偵測取消動作"""
+        if hasattr(self, '_progress_dialog') and self._progress_dialog:
+            if self._progress_dialog.wasCanceled():
+                self._ctrl.cancel_batch_pdf()
+                self._progress_dialog.close()
+                self._progress_dialog = None
+                return
+                
+            pct = int((current - 1) / total * 100)
+            self._progress_dialog.setValue(pct)
+            self._progress_dialog.setLabelText(f"正在生成 ({current}/{total}): {stock_name} ...")
+            QApplication.processEvents() # 驅動 Qt 事件循環，保證 UI 零凍結絲滑刷新
+            
+    def _on_batch_done(self, count: int, target_dir: str) -> None:
+        """批次完成槽函數：詢問是否跳轉直達該日期子資料夾"""
+        if hasattr(self, '_progress_dialog') and self._progress_dialog:
+            self._progress_dialog.setValue(100)
+            self._progress_dialog.close()
+            self._progress_dialog = None
+            
+        reply = QMessageBox.question(
+             self, "批次匯出完成",
+             f"批次輸出結束！\n已成功為 {count} 檔股票建立雙版本 PDF 報告書。\n\n是否開啟當日日期資料夾？\n{Path(target_dir).name}",
+             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            os.startfile(target_dir)
+
 
     def _on_data_loaded(self, date_str: str, count: int) -> None:
         """資料載入完成後更新視窗標題並重設分頁標題"""
@@ -482,8 +538,8 @@ from PyQt6.QtWidgets import QDialog, QGridLayout, QLabel, QLineEdit, QPushButton
 
 class PathConfigDialog(QDialog):
     """
-    Excel 四合一檔案路徑設定對話框。
-    支援設定四個核心資料夾，並以深色金融主題渲染。
+    Excel 四合一檔案路徑設定對話框（已升級為 6 合 1，新增批次名單與預設 PDF 目錄設定）。
+    支援設定六個核心資料夾，並以深色金融主題渲染。
     """
     def __init__(self, controller, parent=None):
         super().__init__(parent)
@@ -499,7 +555,7 @@ class PathConfigDialog(QDialog):
         layout.setSpacing(15)
 
         # 總說明標籤
-        lbl_title = QLabel("📂 Excel 檔案路徑設定")
+        lbl_title = QLabel("📂 Excel 檔案路徑與 PDF 存放設定")
         lbl_title.setStyleSheet("color: #A0C4FF; font-size: 11pt; font-weight: bold;")
         layout.addWidget(lbl_title)
 
@@ -507,17 +563,19 @@ class PathConfigDialog(QDialog):
         grid = QGridLayout()
         grid.setSpacing(10)
 
-        # 四個設定項目
+        # 設定項目
         self._inputs = {}
         
         items = [
-            ("warrant", "權證每日交易EXCEL資料夾:", self._config.get_excel_folder),
-            ("institutional", "三大法人每日買賣超EXCEL資料夾:", self._config.get_folder_institutional),
-            ("daily_price", "日均價DATA EXCEL資料夾:", self._config.get_folder_daily_price),
-            ("foreign_ownership", "外資法人持股EXCEL資料夾:", self._config.get_folder_foreign_ownership)
+            ("warrant", "權證每日交易EXCEL資料夾:", self._config.get_excel_folder, "folder"),
+            ("institutional", "三大法人每日買賣超EXCEL資料夾:", self._config.get_folder_institutional, "folder"),
+            ("daily_price", "日均價DATA EXCEL資料夾:", self._config.get_folder_daily_price, "folder"),
+            ("foreign_ownership", "外資法人持股EXCEL資料夾:", self._config.get_folder_foreign_ownership, "folder"),
+            ("batch_excel", "批次輸出股票名單EXCEL檔案:", self._config.get_batch_stock_excel, "file"),
+            ("output_dir", "預設 PDF 報告存放資料夾:", self._config.get_output_dir, "folder")
         ]
 
-        for i, (key, label, getter) in enumerate(items):
+        for i, (key, label, getter, item_type) in enumerate(items):
             # 建立按鈕
             btn = QPushButton(label)
             btn.setStyleSheet("""
@@ -536,7 +594,10 @@ class PathConfigDialog(QDialog):
                     background-color: #2E5D9F;
                 }
             """)
-            btn.clicked.connect(lambda checked, k=key: self._on_select_folder(k))
+            if item_type == "folder":
+                btn.clicked.connect(lambda checked, k=key: self._on_select_folder(k))
+            else:
+                btn.clicked.connect(lambda checked, k=key: self._on_select_file(k))
             grid.addWidget(btn, i, 0)
 
             # 建立輸入框
@@ -558,7 +619,7 @@ class PathConfigDialog(QDialog):
         layout.addLayout(grid)
 
         # 說明提示
-        lbl_tip = QLabel("💡 系統預設將自動在此資料夾中尋找最新修改的 Excel 檔案進行載入。")
+        lbl_tip = QLabel("💡 批次匯出時系統會自動於預設 PDF 存放資料夾下建立當日日期子資料夾。")
         lbl_tip.setStyleSheet("color: #7FA8D8; font-size: 8.5pt; font-style: italic;")
         layout.addWidget(lbl_tip)
 
@@ -622,13 +683,25 @@ class PathConfigDialog(QDialog):
             folder_path = folder_path.replace("\\", "/")
             self._inputs[key].setText(folder_path)
 
+    def _on_select_file(self, key: str) -> None:
+        from PyQt6.QtWidgets import QFileDialog
+        current_val = self._inputs[key].text()
+        current_dir = str(Path(current_val).parent) if current_val else "."
+        file_path, _ = QFileDialog.getOpenFileName(self, "選擇批次名單 Excel", current_dir, "Excel 檔案 (*.xlsx *.xls)")
+        if file_path:
+            file_path = file_path.replace("\\", "/")
+            self._inputs[key].setText(file_path)
+
     def _on_save(self) -> None:
         # 將設定寫入 Config
         self._config.set_excel_folder(self._inputs["warrant"].text())
         self._config.set_folder_institutional(self._inputs["institutional"].text())
         self._config.set_folder_daily_price(self._inputs["daily_price"].text())
         self._config.set_folder_foreign_ownership(self._inputs["foreign_ownership"].text())
+        self._config.set_batch_stock_excel(self._inputs["batch_excel"].text())
+        self._config.set_output_dir(self._inputs["output_dir"].text())
         
         # 觸發 Controller 重新讀取核心權證 Excel
         self._ctrl.load_and_analyze(self._inputs["warrant"].text())
         self.accept()
+

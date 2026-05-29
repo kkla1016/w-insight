@@ -21,6 +21,7 @@ class ConfigManager:
         "folder_daily_price": ".",
         "folder_foreign_ownership": ".",
         "output_dir": ".",
+        "batch_stock_excel": "",
         "phase1_params": {
             "delta_min": 0.40,
             "delta_max": 0.60,
@@ -141,6 +142,16 @@ class ConfigManager:
         """更新輸出目錄並自動儲存設定"""
         self._config["output_dir"] = path
         self.save()
+
+    def get_batch_stock_excel(self) -> str:
+        """回傳批次股票名單 Excel 檔案路徑"""
+        return self._config.get("batch_stock_excel", self.DEFAULTS["batch_stock_excel"])
+
+    def set_batch_stock_excel(self, path: str) -> None:
+        """更新批次股票名單 Excel 檔案路徑並自動儲存"""
+        self._config["batch_stock_excel"] = path
+        self.save()
+
 
     def get_phase1_params(self) -> dict:
         """回傳階段一篩選參數字典"""

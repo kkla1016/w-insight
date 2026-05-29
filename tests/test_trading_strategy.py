@@ -281,5 +281,49 @@ class TestReportGeneratorChips:
         # 6. 有效槓桿: 2.42x
         assert "2.42x" in combined_text
 
+    def test_parse_batch_stock_list_smart_matching(self, generator, tmp_path):
+        """測試智慧解析股票名單 Excel 檔案，確認其能模糊匹配欄位，或自動降級至第一欄"""
+        import pandas as pd
+        from controllers.app_controller import AppController
+        from utils.config_manager import ConfigManager
+
+        test_config_file = tmp_path / "test_config_app.json"
+        ctrl = AppController(ConfigManager(str(test_config_file)))
+
+        # 1. 建立有指定列名的 Excel
+        df_named = pd.DataFrame({
+            "不相干列": [1, 2, 3],
+            "股票名稱": ["強茂", "南茂", "  台積電  "]
+        })
+        file_named = tmp_path / "named_list.xlsx"
+        df_named.to_excel(file_named, index=False)
+
+        # 測試智慧匹配股票名稱列
+        lst1 = ctrl._parse_batch_stock_list(str(file_named))
+        assert lst1 == ["強茂", "南茂", "台積電"]
+
+        # 2. 建立無列名（自動降級至第一欄，無 header）的 Excel
+        df_unnamed = pd.DataFrame({
+            "第一欄": [" 聯發科 ", "南茂", "強茂", "南茂"]
+        })
+        file_unnamed = tmp_path / "unnamed_list.xlsx"
+        df_unnamed.to_excel(file_unnamed, index=False, header=False)
+
+        # 測試降級匹配與去重（第一行資料被 pandas 誤當成列名，但因不含關鍵字，智慧插回首筆）
+        lst2 = ctrl._parse_batch_stock_list(str(file_unnamed))
+        assert lst2 == ["聯發科", "南茂", "強茂"]
+
+        # 3. 建立有列名但列名非關鍵字（如「第一欄」）且有 header 的 Excel
+        df_non_key = pd.DataFrame({
+            "第一欄": ["聯發科", "南茂", "強茂"]
+        })
+        file_non_key = tmp_path / "non_key_list.xlsx"
+        df_non_key.to_excel(file_non_key, index=False, header=True)
+
+        # 測試列名智慧插回名單開頭
+        lst3 = ctrl._parse_batch_stock_list(str(file_non_key))
+        assert lst3 == ["第一欄", "聯發科", "南茂", "強茂"]
+
+
 
 
