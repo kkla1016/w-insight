@@ -246,7 +246,7 @@ class MainWindow(QMainWindow):
             "• <b>IV/HV 品質 (20分)</b>：1.0 最佳，>1.5 得 0分<br/>"
             "• <b>流動性 (15分)</b>：日成交量 1,000張得滿分"
         )
-        v0_text.setFont(QFont("Microsoft JhengHei", 8.5))
+        v0_text.setFont(QFont("Microsoft JhengHei", 8))
         v0_text.setStyleSheet("color: #BACAD6; line-height: 130%;")
         v0_text.setTextFormat(Qt.TextFormat.RichText)
         v0_text.setWordWrap(True)
@@ -281,7 +281,7 @@ class MainWindow(QMainWindow):
             "• <b>C. 爆發能力 (20分)</b>：Delta 區間 + G/T 比值<br/>"
             "• <b>D. 交易安全 (20分)</b>：天期 >= 90天 + 成交金額"
         )
-        v2_text.setFont(QFont("Microsoft JhengHei", 8.5))
+        v2_text.setFont(QFont("Microsoft JhengHei", 8))
         v2_text.setStyleSheet("color: #BACAD6; line-height: 130%;")
         v2_text.setTextFormat(Qt.TextFormat.RichText)
         v2_text.setWordWrap(True)
