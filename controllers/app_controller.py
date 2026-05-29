@@ -67,23 +67,74 @@ class AppController(QObject):
 
     # ── 公開方法 ───────────────────────────────────────────────
 
-    def load_and_analyze(self, file_path: str | None = None) -> None:
+    def _find_latest_excel(self, folder_path: str) -> str | None:
         """
-        載入 Excel 資料並執行完整分析流程。
+        在指定的資料夾中尋找最新修改的 Excel 檔案。
+        """
+        from pathlib import Path
+        folder = Path(folder_path)
+        if not folder.exists() or not folder.is_dir():
+            return None
+        # 尋找 xlsx 和 xls
+        files = list(folder.glob("*.xlsx")) + list(folder.glob("*.xls"))
+        if not files:
+            return None
+        # 依最後修改時間排序，返回最新修改的檔案路徑
+        try:
+            latest_file = max(files, key=lambda f: f.stat().st_mtime)
+            return str(latest_file)
+        except Exception:
+            return None
+
+    def load_and_analyze(self, folder_path: str | None = None) -> None:
+        """
+        從指定的資料夾載入最新 Excel 資料並執行完整分析流程。
         完成後透過信號通知各 View 元件更新。
 
         Args:
-            file_path: Excel 路徑，None 時從設定檔讀取
+            folder_path: Excel 資料夾路徑，None 時從設定檔讀取
         """
-        path = file_path or self._config.get_excel_path()
+        folder = folder_path or self._config.get_excel_folder()
+        latest_file = self._find_latest_excel(folder)
+
+        # 智慧相容 Fallback：如果新資料夾下找不到 Excel 檔案，嘗試尋找原有的單一 excel_path 檔案
+        if not latest_file:
+            fallback_path = self._config.get_excel_path()
+            if fallback_path and Path(fallback_path).exists():
+                latest_file = fallback_path
+                folder = str(Path(fallback_path).parent)
+            else:
+                self.error_occurred.emit(
+                    f"在資料夾「{Path(folder).resolve()}」內找不到任何 Excel 檔案 (*.xlsx, *.xls)！\n"
+                    f"請先於設定中選擇正確的 Excel 存放資料夾。"
+                )
+                return
+
         try:
-            self.status_message.emit(f"讀取資料中：{Path(path).name} ...")
-            df_raw = self._loader.load_excel(path)
+            self.status_message.emit(f"尋獲最新 Excel：{Path(latest_file).name}，載入中...")
+            df_raw = self._loader.load_excel(latest_file)
             self._raw_df = self._loader.preprocess(df_raw)
 
-            # 更新 Excel 路徑設定
-            if file_path:
-                self._config.set_excel_path(file_path)
+            # 更新持久化設定
+            if folder_path:
+                self._config.set_excel_folder(folder_path)
+            self._config.set_excel_path(latest_file)  # 同步更新單一檔案路徑以維持相容
+
+            # 同步在背景自動定位其他三個資料夾下的最新 Excel 檔案，並在狀態日誌中作記錄
+            other_folders = {
+                "三大法人每日買賣超": self._config.get_folder_institutional(),
+                "日均價DATA": self._config.get_folder_daily_price(),
+                "外資法人持股": self._config.get_folder_foreign_ownership(),
+            }
+            loaded_info = []
+            for name, path in other_folders.items():
+                lf = self._find_latest_excel(path)
+                if lf:
+                    loaded_info.append(f"{name}: {Path(lf).name}")
+                else:
+                    loaded_info.append(f"{name}: (未尋獲 Excel)")
+            
+            print(f"[智慧多目錄檢索] 目前定位：{', '.join(loaded_info)}")
 
             # 通知 View：資料載入完成
             date_str = (
@@ -95,12 +146,6 @@ class AppController(QObject):
             # 發布股票清單供搜尋補全
             stocks = self._filter.get_unique_stocks(self._raw_df)
             self.stocks_list_ready.emit(stocks)
-
-            # 套用預設股票搜尋（僅首次載入時，若 _current_stock_query 尚未設定）
-            if not self._current_stock_query:
-                default_q = self._config.get_default_stock_query()
-                if default_q:
-                    self._current_stock_query = default_q
 
             # 執行篩選
             self._run_filter()
@@ -141,20 +186,6 @@ class AppController(QObject):
                         print(f"無法開啟瀏覽器: {e}")
 
         self._run_filter()
-
-    def set_default_stock_query(self, query: str) -> None:
-        """
-        更新預設股票並儲存到設定檔。
-        下次啟動 APP 時將自動以此股票代號進行搜尋。
-
-        Args:
-            query: 股票代號或名稱字串
-        """
-        self._config.set_default_stock_query(query)
-
-    def get_default_stock_query(self) -> str:
-        """回傳目前儲存的預設股票代號"""
-        return self._config.get_default_stock_query()
 
     def set_screenshot(self, image: QImage) -> None:
         """

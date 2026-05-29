@@ -16,6 +16,10 @@ class ConfigManager:
     # 預設設定值（作為 config.json 不存在時的保護）
     DEFAULTS = {
         "excel_path": "20260527172302DataExport.xlsx",
+        "excel_folder": ".",
+        "folder_institutional": ".",
+        "folder_daily_price": ".",
+        "folder_foreign_ownership": ".",
         "output_dir": ".",
         "phase1_params": {
             "delta_min": 0.40,
@@ -37,7 +41,6 @@ class ConfigManager:
             "min_underlying_roi": 2.0,
         },
         "iv_warning_threshold": 1.5,
-        "default_stock_query": "3189",  # 預設啟動時自動搜尋的股票代號
     }
 
     def __init__(self, config_path: str = "config.json"):
@@ -94,6 +97,42 @@ class ConfigManager:
         self._config["excel_path"] = path
         self.save()
 
+    def get_excel_folder(self) -> str:
+        """回傳權證每日交易 Excel 資料夾路徑"""
+        return self._config.get("excel_folder", self.DEFAULTS["excel_folder"])
+
+    def set_excel_folder(self, path: str) -> None:
+        """更新權證每日交易 Excel 資料夾路徑並自動儲存"""
+        self._config["excel_folder"] = path
+        self.save()
+
+    def get_folder_institutional(self) -> str:
+        """回傳三大法人每日買賣超 Excel 資料夾路徑"""
+        return self._config.get("folder_institutional", self.DEFAULTS["folder_institutional"])
+
+    def set_folder_institutional(self, path: str) -> None:
+        """更新三大法人每日買賣超 Excel 資料夾路徑並自動儲存"""
+        self._config["folder_institutional"] = path
+        self.save()
+
+    def get_folder_daily_price(self) -> str:
+        """回傳日均價 DATA Excel 資料夾路徑"""
+        return self._config.get("folder_daily_price", self.DEFAULTS["folder_daily_price"])
+
+    def set_folder_daily_price(self, path: str) -> None:
+        """更新日均價 DATA Excel 資料夾路徑並自動儲存"""
+        self._config["folder_daily_price"] = path
+        self.save()
+
+    def get_folder_foreign_ownership(self) -> str:
+        """回傳外資法人持股 Excel 資料夾路徑"""
+        return self._config.get("folder_foreign_ownership", self.DEFAULTS["folder_foreign_ownership"])
+
+    def set_folder_foreign_ownership(self, path: str) -> None:
+        """更新外資法人持股 Excel 資料夾路徑並自動儲存"""
+        self._config["folder_foreign_ownership"] = path
+        self.save()
+
     def get_output_dir(self) -> str:
         """回傳匯出檔案的輸出目錄"""
         return self._config.get("output_dir", self.DEFAULTS["output_dir"])
@@ -114,12 +153,3 @@ class ConfigManager:
     def get_iv_warning_threshold(self) -> float:
         """回傳 IV 異常警示的 IV/HV 門檻值"""
         return float(self._config.get("iv_warning_threshold", 1.5))
-
-    def get_default_stock_query(self) -> str:
-        """回傳啟動時預設搜尋的股票代號或名稱"""
-        return self._config.get("default_stock_query", "3189")
-
-    def set_default_stock_query(self, query: str) -> None:
-        """更新預設股票代號並自動儲存設定"""
-        self._config["default_stock_query"] = query.strip()
-        self.save()

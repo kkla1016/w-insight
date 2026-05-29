@@ -73,3 +73,22 @@ class TestConfigManager:
         config_file.write_text("{ invalid json }", encoding="utf-8")
         cm = ConfigManager(str(config_file))
         assert cm.get_excel_path() == "20260527172302DataExport.xlsx"
+
+    def test_additional_folders_read_write(self, tmp_config):
+        """新增的四合一資料夾路徑設定應能正常讀寫與儲存"""
+        # 測試讀取預設值
+        assert tmp_config.get_excel_folder() == "."
+        assert tmp_config.get_folder_institutional() == "."
+        assert tmp_config.get_folder_daily_price() == "."
+        assert tmp_config.get_folder_foreign_ownership() == "."
+
+        # 測試寫入與回讀
+        tmp_config.set_excel_folder("/path/warrant")
+        tmp_config.set_folder_institutional("/path/institutional")
+        tmp_config.set_folder_daily_price("/path/price")
+        tmp_config.set_folder_foreign_ownership("/path/foreign")
+
+        assert tmp_config.get_excel_folder() == "/path/warrant"
+        assert tmp_config.get_folder_institutional() == "/path/institutional"
+        assert tmp_config.get_folder_daily_price() == "/path/price"
+        assert tmp_config.get_folder_foreign_ownership() == "/path/foreign"

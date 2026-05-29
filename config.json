@@ -1,6 +1,9 @@
 {
-    "excel_path": "I:/Desktop/excel選權證/20260527172302DataExport.xlsx",
-    "default_stock_query": "3189",
+    "excel_path": "C:\\TejPro\\TejPro\\DataExport\\權證每日交易\\20260525183445DataExport.xlsx",
+    "excel_folder": "C:/TejPro/TejPro/DataExport/權證每日交易",
+    "folder_institutional": "C:\\Users\\yckuo\\AppData\\Local\\Temp\\pytest-of-yckuo\\pytest-12\\test_local_excel_parsing0\\inst",
+    "folder_daily_price": "C:\\Users\\yckuo\\AppData\\Local\\Temp\\pytest-of-yckuo\\pytest-12\\test_local_excel_parsing0\\price",
+    "folder_foreign_ownership": "C:\\Users\\yckuo\\AppData\\Local\\Temp\\pytest-of-yckuo\\pytest-12\\test_local_excel_parsing0\\fore",
     "output_dir": ".",
     "phase1_params": {
         "delta_min": 0.4,
@@ -21,5 +24,6 @@
         "min_volume": 10,
         "min_underlying_roi": 2.0
     },
-    "iv_warning_threshold": 1.5
+    "iv_warning_threshold": 1.5,
+    "default_stock_query": "8150 南茂"
 }

@@ -80,3 +80,81 @@ class TestTradingStrategy:
         """無標的名稱時應顯示全市場字樣"""
         subtitle = strategy.get_report_subtitle("", "2026/05/27")
         assert "全市場" in subtitle
+
+
+class TestReportGeneratorChips:
+    """測試 ReportGenerator 籌碼與技術面數據檢索 (本機優先與網路降級)"""
+
+    @pytest.fixture
+    def generator(self):
+        from models.report_generator import ReportGenerator
+        return ReportGenerator()
+
+    def test_web_fallback_data(self, generator):
+        """測試無本機 Excel 檔案時應自動降級至網路搜尋，並顯示網路標記"""
+        # 故意將三個目錄路徑設為不存在的目錄，強迫其降級
+        generator._config.set_folder_daily_price("/non_existent_folder_1")
+        generator._config.set_folder_institutional("/non_existent_folder_2")
+        generator._config.set_folder_foreign_ownership("/non_existent_folder_3")
+
+        data = generator._get_chips_and_price_data("南茂 (8150)")
+        assert data["source"] == "網路搜尋"
+        assert len(data["avg_price"]) > 0
+        assert len(data["net_buy"]) > 0
+        assert len(data["foreign_ratio"]) > 0
+
+    def test_local_excel_parsing(self, tmp_path, generator):
+        """測試當本機有 Excel 資料時，應精確匹配並讀出資料，且標記為本機資料庫"""
+        import pandas as pd
+        
+        # 1. 建立暫存目錄與 Excel
+        dir_price = tmp_path / "price"
+        dir_inst = tmp_path / "inst"
+        dir_fore = tmp_path / "fore"
+
+        dir_price.mkdir()
+        dir_inst.mkdir()
+        dir_fore.mkdir()
+
+        df_price = pd.DataFrame({
+            "證券代號": ["8150", "2330"],
+            "證券簡稱": ["南茂", "台積電"],
+            "均價": [38.50, 580.00]
+        })
+        df_inst = pd.DataFrame({
+            "證券代碼": [8150, 2330],
+            "三大法人今日買賣超(張)": [1234, -5678]
+        })
+        df_fore = pd.DataFrame({
+            "代碼": ["8150", "2330"],
+            "外資持股比率(%)": [28.45, 75.20]
+        })
+
+        price_file = dir_price / "price.xlsx"
+        inst_file = dir_inst / "inst.xlsx"
+        fore_file = dir_fore / "fore.xlsx"
+
+        df_price.to_excel(price_file, index=False)
+        df_inst.to_excel(inst_file, index=False)
+        df_fore.to_excel(fore_file, index=False)
+
+        # 2. 配置路徑至 Config
+        generator._config.set_folder_daily_price(str(dir_price))
+        generator._config.set_folder_institutional(str(dir_inst))
+        generator._config.set_folder_foreign_ownership(str(dir_fore))
+
+        # 3. 測試讀取與智慧匹配
+        df_p1 = pd.DataFrame({"標的證券": ["8150 南茂"]})
+        local_price = generator._fetch_stock_data_from_excel(str(price_file), "8150 南茂", ["均價", "收盤", "價格", "均"])
+        local_inst = generator._fetch_stock_data_from_excel(str(inst_file), "8150 南茂", ["買賣超", "法人", "三大法人", "張數", "今日"])
+        local_fore = generator._fetch_stock_data_from_excel(str(fore_file), "8150 南茂", ["持股", "比例", "外資", "百分比", "%"])
+        
+        print(f"DEBUG - local_price: {local_price}")
+        print(f"DEBUG - local_inst: {local_inst}")
+        print(f"DEBUG - local_fore: {local_fore}")
+
+        data = generator._get_chips_and_price_data("南茂", df_p1)
+        assert data["source"] == "本機資料庫"
+        assert "38.50" in data["avg_price"]
+        assert "+1234" in data["net_buy"]
+        assert "28.45" in data["foreign_ratio"]

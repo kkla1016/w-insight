@@ -44,10 +44,15 @@ graph TB
 
 ```mermaid
 erDiagram
+    CONFIG_SETTINGS {
+        string folder_warrant "權證每日交易EXCEL資料夾"
+        string folder_institutional "三大法人每日買賣超EXCEL資料夾"
+        string folder_daily_price "日均價DATA EXCEL資料夾"
+        string folder_foreign_ownership "外資法人持股EXCEL資料夾"
+    }
     EXCEL_SOURCE {
-        string file_path "Excel 檔案路徑"
-        date data_date "資料日期（取最新）"
-        int record_count "認購權證總筆數"
+        string file_path "各類 Excel 最新檔案路徑"
+        date data_date "各資料日期（取最新）"
     }
     WARRANT_DATA {
         int code "代號"
@@ -68,6 +73,7 @@ erDiagram
         text analysis "交易員策略解析"
         text exit_rules "出場紀律"
     }
+    CONFIG_SETTINGS ||--o{ EXCEL_SOURCE : "設定與檢索"
     EXCEL_SOURCE ||--o{ WARRANT_DATA : "包含"
     WARRANT_DATA ||--o{ PDF_REPORT : "產出"
 ```
@@ -94,6 +100,9 @@ flowchart TD
     L -->|匯出 PDF| N[生成含截圖的報告書]
     L -->|貼上截圖| O[載入日K截圖]
     L -->|重新整理| C
+    L -->|變更資料路徑| P[選擇 Excel 檔案] --> Q[載入新檔案] --> R{成功?}
+    R -->|是| S[更新 config.json] --> C
+    R -->|否| T[顯示錯誤提示] --> L
 ```
 
 ---
@@ -164,6 +173,19 @@ sequenceDiagram
 
     User->>MW: Ctrl+V 貼上截圖
     MW->>AC: set_screenshot(image)
+
+    User->>MW: 點擊 📂 Excel 檔案路徑設定 頁籤
+    MW->>User: 彈出 PathConfigDialog 設定對話框
+    User->>MW: 點擊各 EXCEL資料夾: 按鈕選擇目錄並儲存
+    MW->>AC: load_and_analyze(new_folders_dict)
+    AC->>AC: 自動檢索四個目錄中各自最新的 Excel 檔案
+    AC->>DL: load_excel(latest_warrant_file) + preprocess
+    DL-->>AC: 新 DataFrame
+    AC->>AC: 儲存四個新目錄路徑至 config.json
+    AC->>WF: filter_phase1 / filter_phase2 / detect_iv_warnings
+    WF-->>AC: 新三組結果
+    AC-->>MW: Signal: data_loaded + phase1/2/warnings_updated
+    MW->>MW: 更新對話框路徑顯示與主表格
 
     User->>MW: 點擊匯出 PDF
     MW->>AC: export_pdf(stock_name)
@@ -273,3 +295,37 @@ flowchart LR
         C3{MACD縮小?} -->|是| D2
     end
 ```
+
+---
+
+## 11. 籌碼與技術面數據檢索（本機優先與網路降級）
+
+本系統在進行個股報告分析時，採用本機優先與網路降級相結合的高可用數據架構。
+
+> [!NOTE]
+> **現股股價一致性設計**：為了確保個股分析報告頂部卡片的「現股股價」數據極致精準，並在原版與 V2.0 版報告中保持 100% 一致，本系統將頂部摘要統計卡片中的「現股股價」與此智慧檢索系統同步。在個股分析模式下，系統會直接調用 `_get_chips_and_price_data` 讀取最新的當日收盤價，徹底解決以往因使用篩選出之權證的「履約價」粗略代替，進而導致原版與 V2.0 股價不同且不準確的問題。
+
+```mermaid
+flowchart TD
+    A[開始生成個股報告] --> B[檢索本機三個資料夾的最新 Excel]
+    B --> C{是否定位到 Excel 且內含該股精確資料?}
+    C -->|是| D[載入本機數據]
+    D --> E[PDF 標註 來源: 本機資料庫]
+    C -->|否| F[發起網路搜尋: Yahoo 股市 Chart API / 爬蟲]
+    F --> G{網路請求成功?}
+    G -->|是| H[載入網路最新數據]
+    G -->|否| I[優雅降級: 載入金融估算預設數據]
+    H --> J[PDF 標註 來源: 網路搜尋]
+    I --> J
+    E --> K[渲染 PDF 籌碼與均價核心數據卡片]
+    J --> K
+    K --> L[PDF 報告生成完畢]
+```
+
+### 數據來源與匹配對照
+
+| 數據維度 | 設定資料夾 (持久化) | 本機欄位模糊匹配關鍵字 | 網路搜尋 Fallback 來源 | PDF 來源標記 |
+|---------|------------------|----------------------|----------------------|-------------|
+| **日均股價** | 日均價 DATA EXCEL 資料夾 | `["均價", "收盤", "價格", "均"]` | Yahoo Finance Chart API | `[來源: 本機資料庫]` / `[來源: 網路搜尋]` |
+| **三大法人** | 三大法人每日買賣超 EXCEL 資料夾 | `["買賣超", "法人", "三大法人", "張數", "今日"]` | Yahoo 股市 / 真實籌碼估算 | `[來源: 本機資料庫]` / `[來源: 網路搜尋]` |
+| **外資持股** | 外資法人持股 EXCEL 資料夾 | `["持股", "比例", "外資", "百分比", "%"]` | Yahoo 股市 / 外資結構估算 | `[來源: 本機資料庫]` / `[來源: 網路搜尋]` |

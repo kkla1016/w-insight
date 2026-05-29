@@ -9,7 +9,7 @@ from pathlib import Path
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QTabWidget, QToolBar, QStatusBar, QLabel,
-    QFileDialog, QMessageBox, QSplitter, QApplication, QInputDialog,
+    QFileDialog, QMessageBox, QSplitter, QApplication,
 )
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QAction, QIcon, QFont, QKeySequence, QKeyEvent, QColor
@@ -127,14 +127,13 @@ class MainWindow(QMainWindow):
             act.triggered.connect(callback)
             return act
 
-        self._act_load    = make_action("載入 Excel", "📂", "選擇並載入 Excel 資料檔案", self._on_load)
+        self._act_load    = make_action("Excel 檔案路徑設定", "📂", "設定四合一資料夾路徑與智慧檢索", self._on_open_path_config_dialog)
         self._act_csv     = make_action("匯出 CSV",   "📊", "匯出三階段結果為 CSV 檔案", self._on_export_csv)
         self._act_excel   = make_action("匯出 Excel", "📋", "匯出為多分頁 Excel 檔案",   self._on_export_excel)
         self._act_pdf     = make_action("匯出 PDF 報告", "📄", "生成含截圖的完整分析報告書", self._on_export_pdf)
         self._act_refresh = make_action("重新整理",   "🔄", "重新載入並分析資料",         self._on_refresh)
-        self._act_default_stock = make_action("設定預設股票", "⭐", "設定 APP 啟動時預設自動搜尋的股票代號", self._on_set_default_stock)
 
-        for act in [self._act_load, self._act_csv, self._act_excel, self._act_pdf, self._act_refresh, self._act_default_stock]:
+        for act in [self._act_load, self._act_csv, self._act_excel, self._act_pdf, self._act_refresh]:
             self._style_action(act)
             tb.addAction(act)
             tb.addSeparator()
@@ -289,14 +288,10 @@ class MainWindow(QMainWindow):
 
     # ── 事件處理 ──────────────────────────────────────────────
 
-    def _on_load(self) -> None:
-        """選擇 Excel 檔案並載入"""
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, "選擇 Excel 資料檔案", "",
-            "Excel 檔案 (*.xlsx *.xls);;所有檔案 (*)"
-        )
-        if file_path:
-            self._ctrl.load_and_analyze(file_path)
+    def _on_open_path_config_dialog(self) -> None:
+        """開啟 Excel 檔案路徑設定對話框"""
+        dialog = PathConfigDialog(self._ctrl, self)
+        dialog.exec()
 
     def _on_refresh(self) -> None:
         """重新載入目前的 Excel 檔案"""
@@ -336,34 +331,13 @@ class MainWindow(QMainWindow):
                 output_dir=out_dir,
             )
 
-    def _on_set_default_stock(self) -> None:
-        """彈出對話框讓使用者輸入並儲存預設股票代號"""
-        current = self._ctrl.get_default_stock_query()
-        text, ok = QInputDialog.getText(
-            self,
-            "設定預設股票",
-            "請輸入股票代號或名稱（APP 啟動時將自動搜尋此標的）：",
-            text=current,
-        )
-        if ok and text.strip():
-            self._ctrl.set_default_stock_query(text.strip())
-            QMessageBox.information(
-                self,
-                "設定成功",
-                f"預設股票已設定為：「{text.strip()}」\n下次啟動 APP 時將自動套用。",
-            )
-
     def _on_data_loaded(self, date_str: str, count: int) -> None:
         """資料載入完成後更新視窗標題並重設分頁標題"""
         self.setWindowTitle(
             f"{self.APP_TITLE}  {self.APP_VERSION}  ─  {date_str}（共 {count} 筆認購）"
         )
-        # 自動將預設股票填入搜尋欄
-        default_q = self._ctrl.get_default_stock_query()
-        if default_q:
-            self._search_bar.set_text(default_q)
         # 重設分頁標題（載入新資料時清除個股模式標示）
-        self._update_tab_titles(default_q)
+        self._update_tab_titles("")
 
     def _on_export_done(self, file_path: str) -> None:
         """匯出完成後提示並詢問是否開啟資料夾"""
@@ -418,3 +392,159 @@ class MainWindow(QMainWindow):
             self._on_refresh()
         else:
             super().keyPressEvent(event)
+
+
+from PyQt6.QtWidgets import QDialog, QGridLayout, QLabel, QLineEdit, QPushButton
+
+class PathConfigDialog(QDialog):
+    """
+    Excel 四合一檔案路徑設定對話框。
+    支援設定四個核心資料夾，並以深色金融主題渲染。
+    """
+    def __init__(self, controller, parent=None):
+        super().__init__(parent)
+        self._ctrl = controller
+        self._config = controller._config
+        self.setWindowTitle("Excel 檔案路徑設定")
+        self.setMinimumWidth(580)
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setSpacing(15)
+
+        # 總說明標籤
+        lbl_title = QLabel("📂 Excel 檔案路徑設定")
+        lbl_title.setStyleSheet("color: #A0C4FF; font-size: 11pt; font-weight: bold;")
+        layout.addWidget(lbl_title)
+
+        # 網格佈局
+        grid = QGridLayout()
+        grid.setSpacing(10)
+
+        # 四個設定項目
+        self._inputs = {}
+        
+        items = [
+            ("warrant", "權證每日交易EXCEL資料夾:", self._config.get_excel_folder),
+            ("institutional", "三大法人每日買賣超EXCEL資料夾:", self._config.get_folder_institutional),
+            ("daily_price", "日均價DATA EXCEL資料夾:", self._config.get_folder_daily_price),
+            ("foreign_ownership", "外資法人持股EXCEL資料夾:", self._config.get_folder_foreign_ownership)
+        ]
+
+        for i, (key, label, getter) in enumerate(items):
+            # 建立按鈕
+            btn = QPushButton(label)
+            btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #1B3A6B;
+                    color: #E8EAF0;
+                    border: 1px solid #2A3F5F;
+                    border-radius: 4px;
+                    padding: 6px 12px;
+                    font-weight: bold;
+                    font-size: 9pt;
+                    text-align: left;
+                    min-width: 220px;
+                }
+                QPushButton:hover {
+                    background-color: #2E5D9F;
+                }
+            """)
+            btn.clicked.connect(lambda checked, k=key: self._on_select_folder(k))
+            grid.addWidget(btn, i, 0)
+
+            # 建立輸入框
+            edit = QLineEdit(getter())
+            edit.setReadOnly(True)
+            edit.setStyleSheet("""
+                QLineEdit {
+                    background-color: #0D1B2E;
+                    color: #7FA8D8;
+                    border: 1px solid #1B3A6B;
+                    border-radius: 4px;
+                    padding: 6px;
+                    font-size: 9pt;
+                }
+            """)
+            grid.addWidget(edit, i, 1)
+            self._inputs[key] = edit
+
+        layout.addLayout(grid)
+
+        # 說明提示
+        lbl_tip = QLabel("💡 系統預設將自動在此資料夾中尋找最新修改的 Excel 檔案進行載入。")
+        lbl_tip.setStyleSheet("color: #7FA8D8; font-size: 8.5pt; font-style: italic;")
+        layout.addWidget(lbl_tip)
+
+        # 底部按鈕
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+
+        self._btn_save = QPushButton("儲存設定")
+        self._btn_save.setStyleSheet("""
+            QPushButton {
+                background-color: #2E5D9F;
+                color: #FFFFFF;
+                border: 1px solid #3A7DCE;
+                border-radius: 4px;
+                padding: 6px 20px;
+                font-weight: bold;
+                font-size: 9.5pt;
+            }
+            QPushButton:hover {
+                background-color: #3D75C2;
+            }
+        """)
+        self._btn_save.clicked.connect(self._on_save)
+
+        self._btn_cancel = QPushButton("取消")
+        self._btn_cancel.setStyleSheet("""
+            QPushButton {
+                background-color: #2A3F5F;
+                color: #E8EAF0;
+                border: 1px solid #3B5A87;
+                border-radius: 4px;
+                padding: 6px 20px;
+                font-size: 9.5pt;
+            }
+            QPushButton:hover {
+                background-color: #355078;
+            }
+        """)
+        self._btn_cancel.clicked.connect(self.reject)
+
+        btn_layout.addWidget(self._btn_save)
+        btn_layout.addWidget(self._btn_cancel)
+        layout.addLayout(btn_layout)
+
+        # 視窗樣式與主視窗一致
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #111E2E;
+                border: 1px solid #1B3A6B;
+            }
+            QLabel {
+                background-color: transparent;
+            }
+        """)
+
+    def _on_select_folder(self, key: str) -> None:
+        from PyQt6.QtWidgets import QFileDialog
+        current_dir = self._inputs[key].text()
+        folder_path = QFileDialog.getExistingDirectory(self, "選擇資料夾", current_dir)
+        if folder_path:
+            folder_path = folder_path.replace("\\", "/")
+            self._inputs[key].setText(folder_path)
+
+    def _on_save(self) -> None:
+        # 將設定寫入 Config
+        self._config.set_excel_folder(self._inputs["warrant"].text())
+        self._config.set_folder_institutional(self._inputs["institutional"].text())
+        self._config.set_folder_daily_price(self._inputs["daily_price"].text())
+        self._config.set_folder_foreign_ownership(self._inputs["foreign_ownership"].text())
+        
+        # 觸發 Controller 重新讀取核心權證 Excel
+        self._ctrl.load_and_analyze(self._inputs["warrant"].text())
+        self.accept()
