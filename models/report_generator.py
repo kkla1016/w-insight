@@ -577,11 +577,12 @@ class ReportGenerator:
         cw = self.CONTENT_W
         elements = []
 
-        # 1. 聯集所有符合條件的權證代號，複製其原始行以獲取物理欄位
+        # 1. 獨立提取各策略的前 3 名，並進行聯集去重 (四類共 12 檔)
         all_warrants = {}
         for name, df in [("V1建倉", phase1), ("V1加碼", phase2), ("V2主力", class_a), ("V2穩健", class_b)]:
             if df is not None and not df.empty and "代號" in df.columns:
-                for _, row in df.iterrows():
+                top3 = df.head(3)  # 只提取前 3 名
+                for _, row in top3.iterrows():
                     code = str(row["代號"])
                     if code not in all_warrants:
                         all_warrants[code] = row.to_dict()
@@ -608,12 +609,12 @@ class ReportGenerator:
         v2_atk_ranks = get_ranks(class_a)
         v2_std_ranks = get_ranks(class_b)
 
-        # 3. 按推薦評分降序排列，取前 10 筆最優權證 (限流防 PDF 溢出)
+        # 3. 按推薦評分降序排列輸出
         sorted_warrants = sorted(
             all_warrants.values(),
             key=lambda r: float(r.get("推薦評分", 0.0) if pd.notna(r.get("推薦評分", 0.0)) else 0.0),
             reverse=True
-        )[:10]
+        )
 
         # 4. 新增區塊標題
         elements.append(Paragraph(
@@ -657,21 +658,17 @@ class ReportGenerator:
             cell_iv = Paragraph(iv_str, cell_style)
             
             # 價內外程度
-            m_val = row.get("價內外", "")
-            if pd.isna(m_val) or not str(m_val).strip():
-                # 若無價內外文字，利用公式計算
-                try:
-                    strike = float(row.get("履約價(元)", 0))
-                    stock_p = float(row.get("標的證券價格(元)", 0))
-                    if strike > 0 and stock_p > 0:
-                        diff = (stock_p - strike) / strike * 100
-                        m_str = f"價內 {diff:.1f}%" if diff >= 0 else f"價外 {abs(diff):.1f}%"
-                    else:
-                        m_str = "—"
-                except Exception:
+            # 百分之百由認購權證公式自主實時精算，徹底排除 Excel 原始欄位的格式與計算偏差
+            try:
+                strike = float(row.get("履約價(元)", 0))
+                stock_p = float(row.get("標的證券價格(元)", 0))
+                if strike > 0 and stock_p > 0:
+                    diff = (stock_p - strike) / strike * 100
+                    m_str = f"價內 {diff:.1f}%" if diff >= 0 else f"價外 {abs(diff):.1f}%"
+                else:
                     m_str = "—"
-            else:
-                m_str = str(m_val).strip()
+            except Exception:
+                m_str = "—"
             cell_moneyness = Paragraph(m_str, cell_style)
             
             # 天期 / 槓桿
