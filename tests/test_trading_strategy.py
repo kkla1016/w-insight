@@ -86,9 +86,14 @@ class TestReportGeneratorChips:
     """測試 ReportGenerator 籌碼與技術面數據檢索 (本機優先與網路降級)"""
 
     @pytest.fixture
-    def generator(self):
+    def generator(self, tmp_path):
         from models.report_generator import ReportGenerator
-        return ReportGenerator()
+        from utils.config_manager import ConfigManager
+        # 使用 tmp_path 建立測試隔離的臨時設定檔，避免單元測試覆寫實體的 config.json
+        test_config_file = tmp_path / "test_config.json"
+        gen = ReportGenerator()
+        gen._config = ConfigManager(str(test_config_file))
+        return gen
 
     def test_web_fallback_data(self, generator):
         """測試無本機 Excel 檔案時應自動降級至網路搜尋，並顯示網路標記"""
