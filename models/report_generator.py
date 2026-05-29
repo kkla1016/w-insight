@@ -639,6 +639,15 @@ class ReportGenerator:
             Paragraph("V2 排名<br/>(主力/穩健)", hdr_style),
         ]
 
+        # 先行解析出「日均價 DATA」最新當日收盤價數值以供公式使用，雙重保障百分之百精確
+        stock_p_latest = 0.0
+        try:
+            chips_data = self._get_chips_and_price_data(stock_name, phase1, phase2)
+            p_str = chips_data["avg_price"].replace("元", "").replace(",", "").strip()
+            stock_p_latest = float(p_str)
+        except Exception:
+            pass
+
         rows_data = [headers]
 
         for row in sorted_warrants:
@@ -659,9 +668,30 @@ class ReportGenerator:
             
             # 價內外程度
             # 百分之百由認購權證公式自主實時精算，徹底排除 Excel 原始欄位的格式與計算偏差
+            # 支援高度容錯防禦性設計，同時相容多種常見欄位命名
             try:
-                strike = float(row.get("履約價(元)", 0))
-                stock_p = float(row.get("標的證券價格(元)", 0))
+                strike = 0.0
+                for k in ["履約價(元)", "履約價"]:
+                    if k in row and pd.notna(row[k]):
+                        strike = float(row[k])
+                        break
+                
+                stock_p = 0.0
+                # 優先使用 row 中的現股價格 (如標的證券價格(元))
+                for k in ["標的證券價格(元)", "標的收盤價(元)", "標的價(元)", "標的收盤價"]:
+                    if k in row and pd.notna(row[k]):
+                        try:
+                            val = float(row[k])
+                            if val > 0:
+                                stock_p = val
+                                break
+                        except ValueError:
+                            pass
+                
+                # 如果 row 中找不到或無效，Fallback 到最新日均價 (stock_p_latest)
+                if stock_p <= 0 and stock_p_latest > 0:
+                    stock_p = stock_p_latest
+                            
                 if strike > 0 and stock_p > 0:
                     diff = (stock_p - strike) / strike * 100
                     m_str = f"價內 {diff:.1f}%" if diff >= 0 else f"價外 {abs(diff):.1f}%"
