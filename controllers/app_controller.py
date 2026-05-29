@@ -160,19 +160,20 @@ class AppController(QObject):
         except Exception as e:
             self.error_occurred.emit(f"載入失敗：{e}")
 
-    def search_stock(self, query: str) -> None:
+    def search_stock(self, query: str, open_browser: bool = False) -> None:
         """
-        依股票名稱關鍵字重新篩選資料，並自動開啟 Yahoo 股市技術分析網頁。
+        依股票名稱關鍵字重新篩選資料，並選擇性自動開啟 Yahoo 股市技術分析網頁。
 
         Args:
             query: 搜尋關鍵字，空字串表示全部
+            open_browser: 是否自動開啟瀏覽器技術分析網頁
         """
         if self._raw_df is None:
             return
         self._current_stock_query = query.strip()
 
         # 開啟 Yahoo 股市技術分析
-        if self._current_stock_query and not self._raw_df.empty:
+        if open_browser and self._current_stock_query and not self._raw_df.empty:
             q = self._current_stock_query
             mask = self._raw_df["標的證券"].str.contains(q, na=False, case=False)
             matched = self._raw_df[mask]

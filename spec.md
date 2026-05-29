@@ -203,7 +203,7 @@ sequenceDiagram
 classDiagram
     class AppController {
         +load_and_analyze(file_path)
-        +search_stock(query)
+        +search_stock(query, open_browser)
         +set_screenshot(image)
         +export_csv(output_dir)
         +export_excel(output_dir)

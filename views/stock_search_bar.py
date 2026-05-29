@@ -17,8 +17,8 @@ class StockSearchBar(QWidget):
     輸入時即時觸發搜尋信號，按 Enter 或從補全清單選擇亦觸發。
     """
 
-    # 搜尋觸發信號，帶入關鍵字字串（空字串表示清除）
-    search_triggered = pyqtSignal(str)
+    # 搜尋觸發信號，帶入關鍵字字串與是否開啟瀏覽器布林值（空字串表示清除）
+    search_triggered = pyqtSignal(str, bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -100,18 +100,18 @@ class StockSearchBar(QWidget):
         return self._input.text().strip()
 
     def _on_text_changed(self, text: str) -> None:
-        """輸入變更時即時觸發搜尋"""
-        self.search_triggered.emit(text.strip())
+        """輸入變更時即時觸發搜尋（不自動開瀏覽器）"""
+        self.search_triggered.emit(text.strip(), False)
 
     def _on_search(self) -> None:
-        """按 Enter 時觸發搜尋"""
-        self.search_triggered.emit(self.get_query())
+        """按 Enter 時觸發搜尋（開啟瀏覽器）"""
+        self.search_triggered.emit(self.get_query(), True)
 
     def _on_completer_activated(self, text: str) -> None:
-        """從自動補全清單選擇時觸發搜尋"""
-        self.search_triggered.emit(text.strip())
+        """從自動補全清單選擇時觸發搜尋（開啟瀏覽器）"""
+        self.search_triggered.emit(text.strip(), True)
 
     def _on_clear(self) -> None:
-        """清除輸入框並觸發空白搜尋（回到全部資料）"""
+        """清除輸入框並觸發空白搜尋（不開啟瀏覽器）"""
         self._input.clear()
-        self.search_triggered.emit("")
+        self.search_triggered.emit("", False)

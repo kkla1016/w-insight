@@ -297,10 +297,10 @@ class MainWindow(QMainWindow):
         """重新載入目前的 Excel 檔案"""
         self._ctrl.load_and_analyze()
 
-    def _on_search(self, query: str) -> None:
+    def _on_search(self, query: str, open_browser: bool = False) -> None:
         """股票搜尋觸發，並動態切換分頁標題顯示目前模式"""
         self._current_stock_name = query
-        self._ctrl.search_stock(query)
+        self._ctrl.search_stock(query, open_browser=open_browser)
         self._update_tab_titles(query)
 
     def _on_screenshot_changed(self, image) -> None:
