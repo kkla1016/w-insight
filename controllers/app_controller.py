@@ -278,31 +278,47 @@ class AppController(QObject):
 
     def export_pdf(self, stock_name: str = "", output_dir: str | None = None) -> None:
         """
-        生成完整 PDF 報告書。
+        生成完整 PDF 報告書（同時生成原版與 V2.0 版）。
 
         Args:
             stock_name: 報告封面顯示的標的名稱
             output_dir: 輸出目錄，None 時使用設定值
         """
-        if self._phase1.empty and self._phase2.empty:
+        if self._phase1.empty and self._phase2.empty and self._v2_class_a.empty and self._v2_class_b.empty:
             self.error_occurred.emit("尚無篩選資料，請先載入 Excel。")
             return
         out = output_dir or self._config.get_output_dir()
-        fp = DataExporter.build_filepath(out, "warrant_report", "pdf")
+        fp_v1 = DataExporter.build_filepath(out, "warrant_report", "pdf")
+        fp_v2 = DataExporter.build_filepath(out, "warrant_report_v2", "pdf")
         try:
             self.status_message.emit("PDF 報告生成中...")
-            saved_path = self._report.generate_report(
+            
+            # 1. 生成原版報告書
+            saved_path_v1 = self._report.generate_report(
                 phase1=self._phase1,
                 phase2=self._phase2,
                 warnings=self._warnings,
                 screenshot_path=self._screenshot_path,
                 stock_name=stock_name,
-                output_path=fp,
+                output_path=fp_v1,
                 class_a=self._v2_class_a,
                 class_b=self._v2_class_b,
             )
-            self.export_done.emit(saved_path)
-            self.status_message.emit(f"PDF 報告已儲存：{Path(saved_path).name}")
+            
+            # 2. 生成 V2.0 報告書
+            saved_path_v2 = self._report.generate_v2_report(
+                class_a=self._v2_class_a,
+                class_b=self._v2_class_b,
+                warnings=self._warnings,
+                screenshot_path=self._screenshot_path,
+                stock_name=stock_name,
+                output_path=fp_v2,
+                phase1=self._phase1,
+                phase2=self._phase2,
+            )
+            
+            self.export_done.emit(saved_path_v2)
+            self.status_message.emit(f"PDF 報告已儲存：{Path(saved_path_v1).name} 與 {Path(saved_path_v2).name}")
         except Exception as e:
             self.error_occurred.emit(f"PDF 生成失敗：{e}")
 

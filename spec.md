@@ -189,9 +189,9 @@ sequenceDiagram
 
     User->>MW: 點擊匯出 PDF
     MW->>AC: export_pdf(stock_name)
-    AC->>RG: generate_report(...)
-    RG-->>AC: PDF 路徑
-    AC-->>MW: Signal: export_done
+    AC->>RG: generate_report(...) + generate_v2_report(...)
+    RG-->>AC: 兩個 PDF 檔案路徑
+    AC-->>MW: Signal: export_done(v2_path)
     MW->>User: 顯示完成對話框
 ```
 

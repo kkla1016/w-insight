@@ -342,9 +342,22 @@ class MainWindow(QMainWindow):
     def _on_export_done(self, file_path: str) -> None:
         """匯出完成後提示並詢問是否開啟資料夾"""
         name = Path(file_path).name
+        
+        # 若是 PDF 報告，因為同時生成了原版與 V2.0，給出雙版提示
+        if name.endswith(".pdf"):
+            if "_v2" in name:
+                v1_name = name.replace("_v2", "")
+                v2_name = name
+            else:
+                v1_name = name
+                v2_name = name.replace(".pdf", "_v2.pdf")
+            msg = f"原版與 V2.0 報告書均已成功儲存：\n1. {v1_name}\n2. {v2_name}\n\n是否開啟所在資料夾？"
+        else:
+            msg = f"檔案已儲存：\n{name}\n\n是否開啟所在資料夾？"
+            
         reply = QMessageBox.question(
             self, "匯出完成",
-            f"檔案已儲存：\n{name}\n\n是否開啟所在資料夾？",
+            msg,
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
