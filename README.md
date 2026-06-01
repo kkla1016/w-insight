@@ -88,3 +88,32 @@ python -m pytest tests/ -v
 |------|-------|------|------|
 | 一：突破建倉 | 0.40~0.60 | >90天 | 價平長天期，防洗盤 |
 | 二：主升加碼 | 0.05~0.30 | 60~120天 | 微價外，高 Gamma 爆發 |
+
+## n8n 自動化與 API 啟動服務
+
+本專案提供輕量級的 API 啟動服務與 n8n 工作流，支援定時自動啟動 W-Insight。
+
+### 1. 運行 API 伺服器
+
+API 伺服器僅使用 Python 標準庫，無任何額外依賴：
+
+```powershell
+python api_server.py
+```
+
+* **啟動 API**：`GET` 或 `POST` 呼叫 `http://localhost:8000/api/start` 即可異步開啟 W-Insight GUI 桌面應用。
+* **狀態 API**：`GET` 呼叫 `http://localhost:8000/api/status` 可確認服務健康狀況。
+
+### 2. 導入 n8n 工作流
+
+我們已為您準備好工作流 JSON：[w-insight-n8n-workflow.json](w-insight-n8n-workflow.json)。
+
+* **導入步驟**：
+  1. 開啟您的 n8n 面板。
+  2. 建立一個全新工作流，或進入現有工作流。
+  3. 點選右上角的選單，選擇 **"Import from File"**，並選取 `w-insight-n8n-workflow.json`。
+  4. 或是直接複製該檔案內容，並在 n8n 編輯區塊按下 `Ctrl+V` 貼上，即可一鍵導入。
+* **觸發排程**：
+  * **HTTP 請求分支**（預設）：定時於每週一至五早上 9:00 向 `http://localhost:8000/api/start` 發送 POST 請求。
+  * **本機執行命令分支**（備用，預設停用）：若 n8n 與本機在同台 Windows 電腦，可啟用此節點，直接執行 `.\啟動W-Insight.bat`。
+

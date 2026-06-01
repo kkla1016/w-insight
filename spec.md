@@ -475,3 +475,46 @@ flowchart TD
 4. **流暢性與健壯性保障**：
    * **異常隔離**：在批次生成中加入 try-except，若單一股票因代號不存在等原因失敗，系統將記錄日誌並繼續處理名單中的下一檔，絕不導致整個批次程序崩潰。
    * **取消中斷**：UI 的「取消」動作會向 Controller 傳遞 Boolean 旗標，Controller 隨即於下一個迭代安全退出，回收資源。
+
+---
+
+## 16. n8n 自動化定時啟動與 HTTP API 規格
+
+為了提供極致的實戰便利性，本系統設計了輕量級 HTTP API 啟動服務與對應的 n8n 自動化工作流 (Workflow)。交易員可以藉此在開盤前定時自動啟動 W-Insight APP，或進行遠端控制。
+
+### 16.1 API 伺服器架構與端點
+
+本服務透過 `api_server.py` 單獨執行，基於 Python 標準庫 `http.server` 構建，運行於本機 `8000` 連接埠，無任何外部依賴。
+
+* **API 端點設計**：
+  * **啟動 API (`GET / POST` - `/api/start`)**：當接收到請求時，利用 `subprocess.Popen` 以新獨立控制台執行 `python main.py`，開啟 GUI 桌面應用。
+  * **狀態 API (`GET` - `/api/status`)**：回傳服務健康狀態資訊：
+    ```json
+    {
+      "status": "online",
+      "service": "W-Insight API Trigger Service",
+      "version": "1.0.0",
+      "platform": "win32"
+    }
+    ```
+  * **錯誤處理**：請求未知路徑時，回傳 `404 Not Found` 及對應 JSON 格式錯誤訊息。
+
+### 16.2 n8n 整合流程與架構圖
+
+在 n8n 中，自動化啟動分為兩個模式，工作流支持雙通道設計：
+
+```mermaid
+flowchart TD
+    A[Schedule Trigger <br/> 每週一至五 09:00] --> B{觸發策略}
+    B -->|A 方案: HTTP 請求| C[HTTP Request 節點 <br/> POST http://localhost:8000/api/start]
+    B -->|B 方案: 直接執行| D[Execute Command 節點 <br/> cmd.exe /c 啟動W-Insight.bat]
+    C --> E[API Server <br/> Port 8000]
+    E --> F[subprocess.Popen]
+    F --> G[啟動 W-Insight GUI 應用程式]
+    D --> G
+```
+
+### 16.3 規格參數持久化與防禦設計
+* **連線重試防禦**：`api_server.py` 在初始化 Socket 時已設定 `allow_reuse_address = True`。若 API 伺服器無預警重啟，可立即重新綁定 Port 8000，無需等待作業系統回收 Port，提供金融級的高可用度與防禦能力。
+* **異步 GUI 拉起**：當觸發 `/api/start` 時，透過 `subprocess.CREATE_NEW_CONSOLE` 將 GUI 運作隔離在新的子行程中。如此一來，GUI 應用程式的運作與 API 服務完全解耦，GUI 視窗被關閉或操作卡頓都不會影響 API 伺服器的監聽狀態。
+
