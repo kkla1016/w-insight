@@ -21,7 +21,7 @@ class ConfigManager:
         "folder_daily_price": ".",
         "folder_foreign_ownership": ".",
         "output_dir": ".",
-        "batch_stock_excel": "",
+        "batch_stock_folder": "",
         "phase1_params": {
             "delta_min": 0.40,
             "delta_max": 0.60,
@@ -64,6 +64,19 @@ class ConfigManager:
             try:
                 with open(self._config_path, "r", encoding="utf-8") as f:
                     loaded = json.load(f)
+                # 相容舊版 "batch_stock_excel"
+                if "batch_stock_excel" in loaded and "batch_stock_folder" not in loaded:
+                    old_val = loaded["batch_stock_excel"]
+                    if old_val:
+                        try:
+                            old_path = Path(old_val)
+                            if old_path.suffix in [".xlsx", ".xls"]:
+                                loaded["batch_stock_folder"] = str(old_path.parent).replace("\\", "/")
+                            else:
+                                loaded["batch_stock_folder"] = old_val.replace("\\", "/")
+                        except Exception:
+                            loaded["batch_stock_folder"] = old_val.replace("\\", "/")
+                
                 # 深層合併，確保新增的預設鍵不會被舊設定檔遺漏
                 config.update(loaded)
             except (json.JSONDecodeError, IOError):
@@ -143,13 +156,13 @@ class ConfigManager:
         self._config["output_dir"] = path
         self.save()
 
-    def get_batch_stock_excel(self) -> str:
-        """回傳批次股票名單 Excel 檔案路徑"""
-        return self._config.get("batch_stock_excel", self.DEFAULTS["batch_stock_excel"])
+    def get_batch_stock_folder(self) -> str:
+        """回傳批次股票名單資料夾路徑"""
+        return self._config.get("batch_stock_folder", self.DEFAULTS["batch_stock_folder"])
 
-    def set_batch_stock_excel(self, path: str) -> None:
-        """更新批次股票名單 Excel 檔案路徑並自動儲存"""
-        self._config["batch_stock_excel"] = path
+    def set_batch_stock_folder(self, path: str) -> None:
+        """更新批次股票名單資料夾路徑並自動儲存"""
+        self._config["batch_stock_folder"] = path
         self.save()
 
 

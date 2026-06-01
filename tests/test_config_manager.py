@@ -93,12 +93,12 @@ class TestConfigManager:
         assert tmp_config.get_folder_daily_price() == "/path/price"
         assert tmp_config.get_folder_foreign_ownership() == "/path/foreign"
 
-    def test_batch_stock_excel_read_write(self, tmp_config):
-        """測試 batch_stock_excel 設定之讀寫與預設值回傳"""
+    def test_batch_stock_folder_read_write(self, tmp_config):
+        """測試 batch_stock_folder 設定之讀寫與預設值回傳"""
         # 測試預設值
-        assert tmp_config.get_batch_stock_excel() == ""
+        assert tmp_config.get_batch_stock_folder() == ""
 
         # 測試設定並讀回
-        tmp_config.set_batch_stock_excel("/path/to/batch_list.xlsx")
-        assert tmp_config.get_batch_stock_excel() == "/path/to/batch_list.xlsx"
+        tmp_config.set_batch_stock_folder("/path/to/batch_folder")
+        assert tmp_config.get_batch_stock_folder() == "/path/to/batch_folder"
 

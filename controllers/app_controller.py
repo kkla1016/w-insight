@@ -518,20 +518,28 @@ class AppController(QObject):
         """
         批次匯出 PDF 報告書（原版與 V2.0 版）。
         自動在配置之 output_dir 下建立以當日日期為命名的資料夾，
-        智慧讀取 batch_stock_excel 名單，並迴圈各個股執行篩選與 PDF 輸出。
+        智慧檢索名單資料夾中最新的 Excel 檔案並讀取名單，並迴圈各個股執行篩選與 PDF 輸出。
         """
         if self._raw_df is None:
             self.error_occurred.emit("尚無篩選資料，請先載入 Excel。")
             return
             
-        batch_excel = self._config.get_batch_stock_excel()
-        if not batch_excel or not os.path.exists(batch_excel):
-            self.error_occurred.emit("請先在設定中指定『批次輸出股票名單EXCEL檔案』路徑。")
+        batch_folder = self._config.get_batch_stock_folder()
+        if not batch_folder or not os.path.exists(batch_folder):
+            self.error_occurred.emit("請先在設定中指定『批次輸出股票名單資料夾』路徑。")
+            return
+            
+        latest_excel = self._find_latest_excel(batch_folder)
+        if not latest_excel:
+            self.error_occurred.emit(
+                f"在資料夾「{Path(batch_folder).resolve()}」內找不到任何 Excel 檔案 (*.xlsx, *.xls)！\n"
+                f"請確認該資料夾中存有名單檔案。"
+            )
             return
             
         # 1. 智慧解析股票名單
         try:
-            stock_list = self._parse_batch_stock_list(batch_excel)
+            stock_list = self._parse_batch_stock_list(latest_excel)
         except Exception as e:
             self.error_occurred.emit(f"讀取名單 Excel 失敗：{e}")
             return

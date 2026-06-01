@@ -449,11 +449,11 @@ grid
 
 ```mermaid
 flowchart TD
-    A[點選 📦 批次匯出 PDF 報告] --> B{檢查預設 PDF 存放資料夾與名單 Excel?}
+    A[點選 📦 批次匯出 PDF 報告] --> B{檢查預設 PDF 存放資料夾與名單資料夾?}
     B -->|缺失| C[彈出錯誤對話框並停止]
     B -->|健全| D[自動取得預設存放路徑 output_dir]
     D --> E[自動建立當日日期子資料夾 target_dir \n 格式: YYYYMMDD]
-    E --> F[智慧讀取名單 Excel 股票列 \n 支援股票/名稱/代號欄模糊匹配或首欄降級]
+    E --> F[智慧檢索名單資料夾最新 Excel \n 並讀取股票列 (支援模糊匹配或降級)]
     F --> G[彈出 QProgressDialog 進度視窗]
     G --> H[開始批次迭代 每一檔股票]
     H --> I[動態執行個股篩選與雙版本 PDF 流式編譯]
@@ -469,7 +469,7 @@ flowchart TD
 ```
 
 ### 15.2 欄位與設定配置規格
-1. **名單檔案路徑 (`batch_stock_excel`)**：持久化存於 `config.json`，供批次提取股票名單使用。
+1. **名單資料夾路徑 (`batch_stock_folder`)**：持久化存於 `config.json`，供批次提取股票名單時自動定位最新 Excel 檔案。
 2. **預設輸出目錄 (`output_dir`)**：提供持久化，使用者可在「Excel 檔案路徑設定」中以 `預設 PDF 報告存放資料夾` 進行配置。
 3. **日期子資料夾建立**：採用 `datetime.now().strftime("%Y%m%d")` 命名，自動確保資料夾的唯一性與結構工整性。
 4. **流暢性與健壯性保障**：

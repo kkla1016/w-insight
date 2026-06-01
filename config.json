@@ -1,10 +1,11 @@
 {
-    "excel_path": "C:\\TejPro\\TejPro\\DataExport\\權證每日交易\\20260525183445DataExport.xlsx",
+    "excel_path": "C:\\TejPro\\TejPro\\DataExport\\權證每日交易\\20260602072245DataExport.xlsx",
     "excel_folder": "C:/TejPro/TejPro/DataExport/權證每日交易",
     "folder_institutional": "C:\\TejPro\\TejPro\\DataExport\\三大法人每日買賣超",
     "folder_daily_price": "C:\\TejPro\\TejPro\\DataExport\\日均價DATA",
     "folder_foreign_ownership": "C:\\TejPro\\TejPro\\DataExport\\外資法人持股",
-    "output_dir": ".",
+    "output_dir": "i:\\Desktop\\excel選權證\\pdf_reports",
+    "batch_stock_folder": "C:/TejPro/TejPro/DataExport/批次輸出 Excel",
     "phase1_params": {
         "delta_min": 0.4,
         "delta_max": 0.6,

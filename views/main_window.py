@@ -412,9 +412,9 @@ class MainWindow(QMainWindow):
         from PyQt6.QtWidgets import QProgressDialog
         
         # 1. 安全檢查：是否有指定名單與輸出資料夾
-        batch_excel = self._ctrl._config.get_batch_stock_excel()
-        if not batch_excel or not os.path.exists(batch_excel):
-            self._show_error("請先在『Excel 檔案路徑設定』中指定『批次輸出股票名單EXCEL檔案』位置。")
+        batch_folder = self._ctrl._config.get_batch_stock_folder()
+        if not batch_folder or not os.path.exists(batch_folder):
+            self._show_error("請先在『Excel 檔案路徑設定』中指定『批次輸出股票名單資料夾』位置。")
             return
             
         # 2. 建立並彈出 QProgressDialog
@@ -575,7 +575,7 @@ class PathConfigDialog(QDialog):
             ("institutional", "三大法人每日買賣超EXCEL資料夾:", self._config.get_folder_institutional, "folder"),
             ("daily_price", "日均價DATA EXCEL資料夾:", self._config.get_folder_daily_price, "folder"),
             ("foreign_ownership", "外資法人持股EXCEL資料夾:", self._config.get_folder_foreign_ownership, "folder"),
-            ("batch_excel", "批次輸出股票名單EXCEL檔案:", self._config.get_batch_stock_excel, "file"),
+            ("batch_folder", "批次輸出股票名單資料夾:", self._config.get_batch_stock_folder, "folder"),
             ("output_dir", "預設 PDF 報告存放資料夾:", self._config.get_output_dir, "folder")
         ]
 
@@ -702,7 +702,7 @@ class PathConfigDialog(QDialog):
         self._config.set_folder_institutional(self._inputs["institutional"].text())
         self._config.set_folder_daily_price(self._inputs["daily_price"].text())
         self._config.set_folder_foreign_ownership(self._inputs["foreign_ownership"].text())
-        self._config.set_batch_stock_excel(self._inputs["batch_excel"].text())
+        self._config.set_batch_stock_folder(self._inputs["batch_folder"].text())
         self._config.set_output_dir(self._inputs["output_dir"].text())
         
         # 觸發 Controller 重新讀取核心權證 Excel
