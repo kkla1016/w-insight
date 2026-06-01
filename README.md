@@ -114,6 +114,6 @@ python api_server.py
   3. 點選右上角的選單，選擇 **"Import from File"**，並選取 `w-insight-n8n-workflow.json`。
   4. 或是直接複製該檔案內容，並在 n8n 編輯區塊按下 `Ctrl+V` 貼上，即可一鍵導入。
 * **觸發排程**：
-  * **HTTP 請求分支**（預設）：定時於每週一至五早上 9:00 向 `http://localhost:8000/api/start` 發送 POST 請求。
-  * **本機執行命令分支**（備用，預設停用）：若 n8n 與本機在同台 Windows 電腦，可啟用此節點，直接執行 `.\啟動W-Insight.bat`。
+  * 定時於每週一至五早上 9:00 自動向本機 API `http://localhost:8000/api/start` 發送 POST 請求，觸發 W-Insight APP 啟動。
+
 

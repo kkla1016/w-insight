@@ -35,22 +35,8 @@
       "typeVersion": 4.1,
       "position": [
         360,
-        180
+        280
       ]
-    },
-    {
-      "parameters": {
-        "command": "cmd.exe /c \"i:\\Desktop\\excel選權證\\啟動W-Insight.bat\""
-      },
-      "id": "9cc7deef-ca67-4221-8848-fa2277d01111",
-      "name": "直接執行本機批次檔 (備用)",
-      "type": "n8n-nodes-base.executeCommand",
-      "typeVersion": 1,
-      "position": [
-        360,
-        380
-      ],
-      "disabled": true
     }
   ],
   "connections": {
@@ -59,11 +45,6 @@
         [
           {
             "node": "透過 API 啟動 W-Insight",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "直接執行本機批次檔 (備用)",
             "type": "main",
             "index": 0
           }

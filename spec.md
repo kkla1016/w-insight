@@ -501,18 +501,16 @@ flowchart TD
 
 ### 16.2 n8n 整合流程與架構圖
 
-在 n8n 中，自動化啟動分為兩個模式，工作流支持雙通道設計：
+在 n8n 中，自動化啟動透過定時排程向 API 伺服器發送請求完成：
 
 ```mermaid
 flowchart TD
-    A[Schedule Trigger <br/> 每週一至五 09:00] --> B{觸發策略}
-    B -->|A 方案: HTTP 請求| C[HTTP Request 節點 <br/> POST http://localhost:8000/api/start]
-    B -->|B 方案: 直接執行| D[Execute Command 節點 <br/> cmd.exe /c 啟動W-Insight.bat]
-    C --> E[API Server <br/> Port 8000]
-    E --> F[subprocess.Popen]
-    F --> G[啟動 W-Insight GUI 應用程式]
-    D --> G
+    A[Schedule Trigger <br/> 每週一至五 09:00] --> B[HTTP Request 節點 <br/> POST http://localhost:8000/api/start]
+    B --> C[API Server <br/> Port 8000]
+    C --> D[subprocess.Popen]
+    D --> E[啟動 W-Insight GUI 應用程式]
 ```
+
 
 ### 16.3 規格參數持久化與防禦設計
 * **連線重試防禦**：`api_server.py` 在初始化 Socket 時已設定 `allow_reuse_address = True`。若 API 伺服器無預警重啟，可立即重新綁定 Port 8000，無需等待作業系統回收 Port，提供金融級的高可用度與防禦能力。
