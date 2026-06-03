@@ -144,16 +144,14 @@ class TestReportGeneratorChips:
         df_fore.to_excel(fore_file, index=False)
 
         # 2. 配置路徑至 Config
+        # 明確將「未調整股價(日)」設為不存在目錄，確保此測試完全隔離於本機真實資料
+        generator._config.set_folder_unadjusted_price("/non_existent_unadj_folder")
         generator._config.set_folder_daily_price(str(dir_price))
         generator._config.set_folder_institutional(str(dir_inst))
         generator._config.set_folder_foreign_ownership(str(dir_fore))
 
         # 3. 測試讀取與智慧匹配
         df_p1 = pd.DataFrame({"標的證券": ["8150 南茂"]})
-        
-        # 模擬網路獲取股價失敗，以檢驗本機降級讀取與智慧匹配邏輯
-        generator._fetch_web_price = lambda name: None
-        
         local_price = generator._fetch_stock_data_from_excel(str(price_file), "8150 南茂", ["未調整收盤價", "均價", "收盤", "價格", "均"])
         local_inst = generator._fetch_stock_data_from_excel(str(inst_file), "8150 南茂", ["買賣超", "法人", "三大法人", "張數", "今日"])
         local_fore = generator._fetch_stock_data_from_excel(str(fore_file), "8150 南茂", ["持股", "比例", "外資", "百分比", "%"])
@@ -357,5 +355,136 @@ class TestReportGeneratorChips:
         assert lst3 == ["第一欄", "聯發科", "南茂", "強茂"]
 
 
+class TestUnadjustedPriceExcel:
+    """測試「未調整股價(日)」Excel 的精確讀取邏輯"""
 
+    @pytest.fixture
+    def generator(self, tmp_path):
+        from models.report_generator import ReportGenerator
+        from utils.config_manager import ConfigManager
+        test_config_file = tmp_path / "test_config.json"
+        gen = ReportGenerator()
+        gen._config = ConfigManager(str(test_config_file))
+        return gen
 
+    def _make_unadj_excel(self, tmp_path, data_rows: list[dict]) -> str:
+        """建立模擬的「未調整股價(日)」結構 Excel（36欄）"""
+        import pandas as pd
+
+        # 完整的 36 欄結構（與 TejPro 匯出格式一致）
+        columns = [
+            "代號", "名稱", "年月日", "開盤價(元)", "最高價(元)", "最低價(元)",
+            "收盤價(元)",          # index 6 = G 欄
+            "成交量(千股)", "成交值(千元)",
+            "報酬率％",            # index 9 = J 欄
+            "週轉率％", "流通在外股數(千股)", "市值(百萬元)", "最後揭示買價",
+            "最後揭示賣價", "報酬率-Ln", "市值比重％", "成交值比重％",
+            "成交筆數(筆)", "本益比-TSE", "本益比-TEJ", "股價淨值比-TSE",
+            "股價淨值比-TEJ", "漲跌停", "股價營收比-TEJ", "股利殖利率-TSE",
+            "現金股利率", "股價漲跌(元)", "高低價差%", "次日開盤參考價",
+            "次日漲停價", "次日跌停價", "注意股票(A)", "處置股票(D)",
+            "全額交割(Y)", "市場別"
+        ]
+        rows = []
+        for d in data_rows:
+            row = {c: None for c in columns}
+            row.update(d)
+            rows.append(row)
+        df = pd.DataFrame(rows, columns=columns)
+        file_path = tmp_path / "unadj_price.xlsx"
+        df.to_excel(file_path, index=False)
+        return str(file_path)
+
+    def test_fetch_close_price_by_code(self, generator, tmp_path):
+        """應能依代號精確讀取 G 欄收盤價"""
+        file_path = self._make_unadj_excel(tmp_path, [
+            {"代號": "8150", "名稱": "南茂", "年月日": "2026/06/03",
+             "收盤價(元)": 38.50, "報酬率％": 2.1234},
+            {"代號": "2330", "名稱": "台積電", "年月日": "2026/06/03",
+             "收盤價(元)": 940.00, "報酬率％": 1.5000},
+        ])
+        close, roi = generator._fetch_from_unadjusted_price_excel(file_path, "8150 南茂")
+        assert close is not None, "應能讀取到收盤價"
+        assert "38.50" in close
+        assert roi is not None, "應能讀取到報酬率"
+        assert "2.1234" in roi
+
+    def test_fetch_by_name_fuzzy(self, generator, tmp_path):
+        """應能依名稱模糊比對讀取資料"""
+        file_path = self._make_unadj_excel(tmp_path, [
+            {"代號": "2330", "名稱": "台積電", "年月日": "2026/06/03",
+             "收盤價(元)": 940.00, "報酬率％": -0.5321},
+        ])
+        close, roi = generator._fetch_from_unadjusted_price_excel(file_path, "台積電")
+        assert close is not None
+        assert "940.00" in close
+        assert roi is not None
+        assert "-0.5321" in roi or "0.5321" in roi
+
+    def test_not_found_returns_none_tuple(self, generator, tmp_path):
+        """找不到個股時應回傳 (None, None)"""
+        file_path = self._make_unadj_excel(tmp_path, [
+            {"代號": "2330", "名稱": "台積電", "收盤價(元)": 940.00, "報酬率％": 1.0},
+        ])
+        close, roi = generator._fetch_from_unadjusted_price_excel(file_path, "9999 不存在")
+        assert close is None
+        assert roi is None
+
+    def test_nonexistent_file_returns_none_tuple(self, generator):
+        """檔案不存在時應回傳 (None, None) 而非拋出例外"""
+        close, roi = generator._fetch_from_unadjusted_price_excel(
+            "/non_existent/file.xlsx", "8150 南茂"
+        )
+        assert close is None
+        assert roi is None
+
+    def test_unadjusted_price_priority_over_daily_price(self, generator, tmp_path):
+        """核心優先順序測試：「未調整股價(日)」G欄收盤價應優先於「日均價DATA」的均價欄"""
+        import pandas as pd
+
+        # 建立「未調整股價(日)」Excel（G欄收盤價 = 38.50）
+        unadj_dir = tmp_path / "unadj"
+        unadj_dir.mkdir()
+        unadj_file = self._make_unadj_excel(unadj_dir, [
+            {"代號": "8150", "名稱": "南茂", "年月日": "2026/06/03",
+             "收盤價(元)": 38.50, "報酬率％": 2.1234},
+        ])
+        import shutil
+        shutil.copy(unadj_file, unadj_dir / "20260604DataExport.xlsx")
+
+        # 建立「日均價DATA」Excel（均價 = 999.99，故意設很不同以區分）
+        daily_dir = tmp_path / "daily"
+        daily_dir.mkdir()
+        df_daily = pd.DataFrame({
+            "證券代號": ["8150"],
+            "證券簡稱": ["南茂"],
+            "均價": [999.99]
+        })
+        df_daily.to_excel(daily_dir / "20260604DataExport.xlsx", index=False)
+
+        # 建立法人與外資 Excel
+        inst_dir = tmp_path / "inst"
+        inst_dir.mkdir()
+        df_inst = pd.DataFrame({"證券代碼": [8150], "三大法人今日買賣超(張)": [500]})
+        df_inst.to_excel(inst_dir / "20260604DataExport.xlsx", index=False)
+
+        fore_dir = tmp_path / "fore"
+        fore_dir.mkdir()
+        df_fore = pd.DataFrame({"代碼": ["8150"], "外資持股比率(%)": [28.45]})
+        df_fore.to_excel(fore_dir / "20260604DataExport.xlsx", index=False)
+
+        # 設定四個路徑
+        generator._config.set_folder_unadjusted_price(str(unadj_dir))
+        generator._config.set_folder_daily_price(str(daily_dir))
+        generator._config.set_folder_institutional(str(inst_dir))
+        generator._config.set_folder_foreign_ownership(str(fore_dir))
+
+        # 執行並驗證
+        data = generator._get_chips_and_price_data("8150 南茂")
+
+        # 收盤價應為 38.50（來自未調整股價(日)），而非 999.99（日均價DATA）
+        assert "38.50" in data["avg_price"], f"應讀取未調整股價(日)的 38.50，實際: {data['avg_price']}"
+        assert data.get("price_source") == "未調整股價(日)", f"price_source 應為「未調整股價(日)」，實際: {data.get('price_source')}"
+        # 報酬率也應已填充
+        assert data.get("daily_return") is not None, "daily_return 應有值"
+        assert abs(data["daily_return"] - 2.1234) < 0.001

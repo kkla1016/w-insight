@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 PDF 報告生成器模組
 使用 reportlab 生成完整的權證分析報告書。
@@ -384,84 +383,102 @@ class ReportGenerator:
             print(f"[本機檢索] 解析 Excel 失敗: {e}")
             return None
 
-    def _get_stock_code_by_name(self, stock_name: str) -> str | None:
+    def _fetch_from_unadjusted_price_excel(self, file_path: str, stock_name: str) -> tuple[str | None, str | None]:
         """
-        利用本機價格 Excel 檔案，根據股票名稱/簡稱反查其代號。
-        """
-        import re
-        import os
-        import pandas as pd
-        
-        # 1. 優先嘗試正則匹配代碼
-        m = re.search(r'(\d+)', stock_name)
-        if m:
-            return m.group(1)
-            
-        # 2. 如果只有純名稱，從本機最新價格 Excel 中搜尋
-        try:
-            file_price = self._find_latest_excel_in_dir(self._config.get_folder_daily_price())
-            if not file_price or not os.path.exists(file_price):
-                return None
-            df = pd.read_excel(file_price)
-            stock_clean_name = stock_name.replace(" ", "").strip()
-            
-            # 尋找匹配簡稱的列
-            matched_idx = None
-            for col in df.columns:
-                col_str = str(col)
-                if any(k in col_str for k in ["簡稱", "名稱", "證券", "標的"]):
-                    for idx, val in df[col].items():
-                        if stock_clean_name in str(val).strip():
-                            matched_idx = idx
-                            break
-                if matched_idx is not None:
-                    break
-            
-            if matched_idx is not None:
-                row = df.iloc[matched_idx]
-                for col in df.columns:
-                    col_str = str(col)
-                    if any(k in col_str for k in ["代號", "代碼"]):
-                        return str(row[col]).strip()
-        except Exception as e:
-            print(f"[反查代碼] 反查 {stock_name} 代碼失敗: {e}")
-        return None
+        從「未調整股價(日)」Excel 精確讀取個股的收盤價（G 欄）與報酬率（J 欄）。
+        使用代號（A 欄）或名稱（B 欄）進行精確/模糊匹配。
 
-    def _fetch_web_price(self, stock_name: str) -> str | None:
+        Args:
+            file_path: Excel 檔案完整路徑
+            stock_name: 個股名稱或代號（如 "8150 南茂" 或 "8150"）
+
+        Returns:
+            (收盤價字串, 報酬率字串) 元組；若找不到則回傳 (None, None)
         """
-        從 Yahoo 股市 API 獲取個股當日最新收盤價/即時價。
-        採用優先讀取 regularMarketPrice 之策略，以防盤後仍抓到前一日舊價格。
-        """
-        import urllib.request
-        import json
-        
-        # 智慧獲取/反查股票代碼
-        stock_code = self._get_stock_code_by_name(stock_name)
-        if not stock_code:
-            return None
-            
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        import pandas as pd
+        import re
+        from pathlib import Path
+
+        if not file_path or not Path(file_path).exists():
+            return None, None
+
         try:
-            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{stock_code}.TW"
-            req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=2.5) as response:
-                data = json.loads(response.read().decode())
-                meta = data['chart']['result'][0]['meta']
-                # 優先取 regularMarketPrice (當日最新市價/收盤價)，其次取前一日收盤價
-                price = meta.get('regularMarketPrice') or meta.get('chartPreviousClose') or meta.get('previousClose')
-                if price:
-                    return f"{price:,.2f}"
+            df = pd.read_excel(file_path)
+
+            # 欄位索引對應（依資料結構：A=0代號, B=1名稱, G=6收盤價(元), J=9報酬率％）
+            # 使用欄位名稱匹配以增強健壯性
+            col_names = list(df.columns)
+
+            # 確認 G 欄（index 6）與 J 欄（index 9）的欄位名稱
+            if len(col_names) < 10:
+                print(f"[未調整股價(日)] 欄位數不足（{len(col_names)} 欄），預期至少 10 欄")
+                return None, None
+
+            # 解析股票代號與名稱
+            m = re.search(r'(\d+)', stock_name)
+            stock_code = m.group(1) if m else ""
+            stock_clean_name = re.sub(r'\d+', '', stock_name).replace(" ", "").strip()
+
+            # 在代號欄（A）或名稱欄（B）精確匹配
+            matched_row = None
+            code_col = col_names[0]   # A 欄：代號
+            name_col = col_names[1]   # B 欄：名稱
+
+            for idx, row in df.iterrows():
+                code_val = str(row[code_col]).strip()
+                name_val = str(row[name_col]).strip()
+
+                # 代號完全比對（最高優先）
+                if stock_code and code_val == stock_code:
+                    matched_row = row
+                    break
+                # 代號部分包含（如 "00400A" 中含 "00400"）
+                if stock_code and stock_code in code_val:
+                    matched_row = row
+                    break
+                # 名稱模糊比對
+                if stock_clean_name and stock_clean_name in name_val:
+                    matched_row = row
+                    break
+
+            if matched_row is None:
+                return None, None
+
+            # 讀取 G 欄收盤價（index 6）
+            close_col = col_names[6]   # G 欄：收盤價(元)
+            return_col = col_names[9]  # J 欄：報酬率％
+
+            close_val = matched_row[close_col]
+            return_val = matched_row[return_col]
+
+            close_str = None
+            if pd.notna(close_val):
+                try:
+                    close_str = f"{float(close_val):,.2f}"
+                except (ValueError, TypeError):
+                    close_str = str(close_val).strip()
+
+            return_str = None
+            if pd.notna(return_val):
+                try:
+                    return_str = f"{float(return_val):.4f}"
+                except (ValueError, TypeError):
+                    return_str = str(return_val).strip()
+
+            return close_str, return_str
+
         except Exception as e:
-            print(f"[網路股價] 獲取 {stock_name} (代碼: {stock_code}) 最新股價失敗: {e}")
-        return None
+            print(f"[未調整股價(日)] 解析 Excel 失敗: {e}")
+            return None, None
 
     def _fetch_web_fallback_data(self, stock_name: str) -> dict:
         """
         當本機 Excel 找不到資料時，透過 Yahoo 股市 API / 網路搜尋抓取該股票數據。
         採行優雅降級防護，保障 100% 不會因網路或請求問題崩潰。
         """
-        # 智慧獲取/反查股票代碼
-        stock_code = self._get_stock_code_by_name(stock_name) or "8150"
+        import re
+        m = re.search(r'(\d+)', stock_name)
+        stock_code = m.group(1) if m else "8150"
         
         # 預設估算數據
         res = {
@@ -471,7 +488,7 @@ class ReportGenerator:
             "source": "網路搜尋"
         }
 
-        # 嘗試使用 Yahoo API 取得當日收盤價/即時價，而非單純前一日收盤價
+        # 嘗試使用 Yahoo API 取得前一日收盤價（chartPreviousClose），而非即時市價
         import urllib.request
         import json
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
@@ -481,8 +498,8 @@ class ReportGenerator:
             with urllib.request.urlopen(req, timeout=2.5) as response:
                 data = json.loads(response.read().decode())
                 meta = data['chart']['result'][0]['meta']
-                # 優先取當日最新收盤價，其次為前一日未調整收盤價，避免盤後仍取得舊價
-                price = meta.get('regularMarketPrice') or meta.get('chartPreviousClose') or meta.get('previousClose')
+                # 優先取前一日未調整收盤價，避免因盤中即時市價導致價格偏差
+                price = meta.get('chartPreviousClose') or meta.get('previousClose')
                 if price:
                     res["avg_price"] = f"{price:,.2f} 元"
         except Exception:
@@ -504,12 +521,14 @@ class ReportGenerator:
 
     def _get_chips_and_price_data(self, stock_name: str, phase1: pd.DataFrame = None, phase2: pd.DataFrame = None) -> dict:
         """
-        彙整籌碼與均價核心數據。現股價格優先採網路獲取，若失敗降級至本機；籌碼維持本機優先。
+        彙整籌碼與均價核心數據。優先順序：
+          1. 「未調整股價(日)」資料夾（G 欄收盤價、J 欄報酬率）
+          2. 「日均價 DATA」資料夾（模糊關鍵字匹配）
+          3. Yahoo Finance API 網路搜尋
         """
-        # 智慧特徵補全：提取代號與簡稱
         import re
         stock_clean = re.sub(r'\d+', '', stock_name).replace(" ", "").strip()
-        
+
         # 尋找完整的 '標的證券' 字串 (如 "8150 南茂")
         full_stock_id = stock_name
         for df in [phase1, phase2]:
@@ -521,42 +540,62 @@ class ReportGenerator:
                         full_stock_id = str(matched.iloc[0])
                         break
 
-        # 1. 取得三個本機資料夾中最新的 Excel
+        # ── 第一優先：未調整股價(日) ──────────────────────────────
+        file_unadj = self._find_latest_excel_in_dir(self._config.get_folder_unadjusted_price())
+        unadj_close, unadj_return = self._fetch_from_unadjusted_price_excel(file_unadj, full_stock_id)
+
+        # ── 第二優先：三個本機資料夾 ──────────────────────────────
         file_price = self._find_latest_excel_in_dir(self._config.get_folder_daily_price())
         file_inst = self._find_latest_excel_in_dir(self._config.get_folder_institutional())
         file_fore = self._find_latest_excel_in_dir(self._config.get_folder_foreign_ownership())
 
-        # 2. 嘗試自本機檢索
-        # 日均價欄位優先順序：先精確比對「未調整收盤價」，再嘗試其他收盤/均價欄位
-        local_price = self._fetch_stock_data_from_excel(file_price, full_stock_id, ["未調整收盤價", "均價", "收盤", "價格", "均"])
+        # 決定收盤價：第一優先用未調整股價(日)，否則用日均價 DATA
+        if unadj_close is not None:
+            local_price = unadj_close
+            price_source = "未調整股價(日)"
+            print(f"[未調整股價(日)] 優先成功取得 {full_stock_id} 收盤價: {unadj_close}")
+        else:
+            # 日均價欄位優先順序：先精確比對「未調整收盤價」，再嘗試其他收盤/均價欄位
+            local_price = self._fetch_stock_data_from_excel(
+                file_price, full_stock_id, ["未調整收盤價", "均價", "收盤", "價格", "均"]
+            )
+            price_source = "日均價DATA" if local_price else None
+
+        # 法人與外資來源維持不變
         local_inst = self._fetch_stock_data_from_excel(file_inst, full_stock_id, ["買賣超", "法人", "三大法人", "張數", "今日"])
         local_fore = self._fetch_stock_data_from_excel(file_fore, full_stock_id, ["持股", "比例", "外資", "百分比", "%"])
 
-        # 3. 智慧現股股價：優先採用網路最新的即時/當日收盤價，若失敗則降級至本機 Excel 價格
-        web_price = self._fetch_web_price(full_stock_id)
-        price_val = web_price or local_price
-
-        # 4. 判斷是否三項數據均已尋獲 (股價使用網路/本機，籌碼與外資使用本機)
-        if price_val is not None and local_inst is not None and local_fore is not None:
-            price_str = f"{price_val} 元" if "元" not in price_val else price_val
+        # 判斷是否三項數據均自本機尋獲
+        if local_price is not None and local_inst is not None and local_fore is not None:
+            price_str = f"{local_price} 元" if "元" not in local_price else local_price
             inst_str = f"{local_inst} 張" if "張" not in local_inst else local_inst
             if not inst_str.startswith("+") and not inst_str.startswith("-") and inst_str[0].isdigit():
                 inst_str = f"+{inst_str}"
             fore_str = f"{local_fore} %" if "%" not in local_fore else local_fore
 
+            # 整理今日漲跌幅
+            daily_return = None
+            if unadj_return is not None:
+                try:
+                    daily_return = float(unadj_return)
+                except (ValueError, TypeError):
+                    pass
+
             return {
                 "avg_price": price_str,
                 "net_buy": inst_str,
                 "foreign_ratio": fore_str,
-                "source": "本機資料庫"
+                "source": "本機資料庫",
+                "price_source": price_source or "本機資料庫",
+                "daily_return": daily_return,  # 今日報酬率（百分比），可為 None
             }
-        
-        # 5. 若有任何一項未尋獲，則執行網路搜尋 (Web Fallback)
+
+        # 若有任何一項未尋獲，則執行網路搜尋 (Web Fallback)
         web_data = self._fetch_web_fallback_data(full_stock_id)
-        
+
         # 混合填補
-        if price_val is not None:
-            web_data["avg_price"] = f"{price_val} 元" if "元" not in price_val else price_val
+        if local_price is not None:
+            web_data["avg_price"] = f"{local_price} 元" if "元" not in local_price else local_price
         if local_inst is not None:
             inst_str = f"{local_inst} 張" if "張" not in local_inst else local_inst
             if not inst_str.startswith("+") and not inst_str.startswith("-") and inst_str[0].isdigit():
@@ -566,10 +605,20 @@ class ReportGenerator:
             web_data["foreign_ratio"] = f"{local_fore} %" if "%" not in local_fore else local_fore
 
         # 只要有任何一項是用網路抓取的，資料來源就標記為「網路搜尋」
-        if price_val is None or local_inst is None or local_fore is None:
+        if local_price is None or local_inst is None or local_fore is None:
             web_data["source"] = "網路搜尋"
         else:
             web_data["source"] = "本機資料庫"
+
+        # 補充 price_source 與 daily_return
+        web_data["price_source"] = price_source or "網路搜尋"
+        daily_return = None
+        if unadj_return is not None:
+            try:
+                daily_return = float(unadj_return)
+            except (ValueError, TypeError):
+                pass
+        web_data["daily_return"] = daily_return
 
         return web_data
 
@@ -1025,11 +1074,17 @@ class ReportGenerator:
         stock_display = stock_name if stock_name else "全市場"
 
         # ── 智慧現股股價對齊設計 ──
-        # 若為個股分析，則直接調用本機優先+網路搜尋機制獲取當日最新收盤價
-        # 這能保證原版與 V2.0 報告書的現股股價完全一致，且百分之百精確
+        # 若為個股分析，則直接調用本機優先+網路搜尋機制獲取當日最新收盤價與漲跌幅
+        # 「未調整股價(日)」為第一優先，報酬率 J 欄也用於更新 roi
         if stock_name and stock_name != "全市場":
             chips_data = self._get_chips_and_price_data(stock_name, phase1, phase2)
-            price_str = chips_data["avg_price"] # 取得例如 "38.50 元" 格式的精確股價
+            price_str = chips_data["avg_price"]  # 取得例如 "38.50 元" 格式的精確股價
+            # 若有取得「未調整股價(日)」的今日報酬率，優先覆蓋 roi
+            unadj_return = chips_data.get("daily_return")
+            if unadj_return is not None:
+                roi = unadj_return
+                roi_str = f"+{roi:.2f}%" if roi >= 0 else f"{roi:.2f}%"
+                momentum = "強勢" if roi >= 5 else ("中等" if roi >= 2 else "觀察")
         else:
             # 全市場模式下無單一標的，降級至原有的權證履約價粗估邏輯
             price = self._get_price(phase1, phase2)

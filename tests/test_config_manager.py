@@ -102,3 +102,24 @@ class TestConfigManager:
         tmp_config.set_batch_stock_folder("/path/to/batch_folder")
         assert tmp_config.get_batch_stock_folder() == "/path/to/batch_folder"
 
+    def test_folder_unadjusted_price_default(self, tmp_config):
+        """未調整股價(日)資料夾應有正確的預設值（指向 TejPro 目錄）"""
+        default_path = tmp_config.get_folder_unadjusted_price()
+        # 預設值應包含「未調整股價」關鍵字
+        assert "未調整股價" in default_path or "TejPro" in default_path
+
+    def test_folder_unadjusted_price_read_write(self, tmp_config):
+        """未調整股價(日)資料夾應能正確設定與讀回"""
+        test_path = "C:/TejPro/TejPro/DataExport/未調整股價(日)"
+        tmp_config.set_folder_unadjusted_price(test_path)
+        assert tmp_config.get_folder_unadjusted_price() == test_path
+
+    def test_folder_unadjusted_price_persistence(self, tmp_path):
+        """未調整股價(日)資料夾設定應能持久化至 config.json 並重新載入"""
+        config_file = str(tmp_path / "config.json")
+        cm1 = ConfigManager(config_file)
+        cm1.set_folder_unadjusted_price("/test/unadj_price")
+
+        # 重新載入，驗證持久化
+        cm2 = ConfigManager(config_file)
+        assert cm2.get_folder_unadjusted_price() == "/test/unadj_price"

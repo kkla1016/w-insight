@@ -128,10 +128,11 @@ class AppController(QObject):
                 self._config.set_excel_folder(folder_path)
             self._config.set_excel_path(latest_file)  # 同步更新單一檔案路徑以維持相容
 
-            # 同步在背景自動定位其他三個資料夾下的最新 Excel 檔案，並在狀態日誌中作記錄
+            # 同步在背景自動定位其他資料夾下的最新 Excel 檔案，並在狀態日誌中作記錄
             other_folders = {
+                "未調整股價(日)【第一優先】": self._config.get_folder_unadjusted_price(),
                 "三大法人每日買賣超": self._config.get_folder_institutional(),
-                "日均價DATA": self._config.get_folder_daily_price(),
+                "日均價DATA【第二優先】": self._config.get_folder_daily_price(),
                 "外資法人持股": self._config.get_folder_foreign_ownership(),
             }
             loaded_info = []

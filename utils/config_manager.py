@@ -18,6 +18,7 @@ class ConfigManager:
         "excel_path": "20260527172302DataExport.xlsx",
         "excel_folder": ".",
         "folder_institutional": ".",
+        "folder_unadjusted_price": "C:\\TejPro\\TejPro\\DataExport\\未調整股價(日)",
         "folder_daily_price": ".",
         "folder_foreign_ownership": ".",
         "output_dir": ".",
@@ -136,6 +137,15 @@ class ConfigManager:
     def set_folder_daily_price(self, path: str) -> None:
         """更新日均價 DATA Excel 資料夾路徑並自動儲存"""
         self._config["folder_daily_price"] = path
+        self.save()
+
+    def get_folder_unadjusted_price(self) -> str:
+        """回傳「未調整股價(日)」 Excel 資料夾路徑（收盤價 G欄、漲跌幅 J欄第一優先來源）"""
+        return self._config.get("folder_unadjusted_price", self.DEFAULTS["folder_unadjusted_price"])
+
+    def set_folder_unadjusted_price(self, path: str) -> None:
+        """更新「未調整股價(日)」 Excel 資料夾路徑並自動儲存"""
+        self._config["folder_unadjusted_price"] = path
         self.save()
 
     def get_folder_foreign_ownership(self) -> str:
