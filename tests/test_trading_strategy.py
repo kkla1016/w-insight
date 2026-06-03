@@ -150,7 +150,7 @@ class TestReportGeneratorChips:
 
         # 3. 測試讀取與智慧匹配
         df_p1 = pd.DataFrame({"標的證券": ["8150 南茂"]})
-        local_price = generator._fetch_stock_data_from_excel(str(price_file), "8150 南茂", ["均價", "收盤", "價格", "均"])
+        local_price = generator._fetch_stock_data_from_excel(str(price_file), "8150 南茂", ["未調整收盤價", "均價", "收盤", "價格", "均"])
         local_inst = generator._fetch_stock_data_from_excel(str(inst_file), "8150 南茂", ["買賣超", "法人", "三大法人", "張數", "今日"])
         local_fore = generator._fetch_stock_data_from_excel(str(fore_file), "8150 南茂", ["持股", "比例", "外資", "百分比", "%"])
         
@@ -163,6 +163,34 @@ class TestReportGeneratorChips:
         assert "38.50" in data["avg_price"]
         assert "+1234" in data["net_buy"]
         assert "28.45" in data["foreign_ratio"]
+
+    def test_unadjusted_close_price_priority(self, tmp_path, generator):
+        """核心測試：確認「未調整收盤價」欄位優先級高於「收盤」模糊關鍵字，避免拪取到調整後收盤價。"""
+        import pandas as pd
+
+        dir_price = tmp_path / "price_priority"
+        dir_price.mkdir()
+
+        # 模擬 Excel 有兩個「收盤」欄位：調整後收盤價和未調整收盤價
+        df_price = pd.DataFrame({
+            "證券代號": ["6138", "2330"],
+            "證券簡稱": ["茂達", "台積電"],
+            "收盤價(元)": [369.50, 900.00],   # 調整後 / 当日市價 (错誤的)
+            "未調整收盤價": [329.00, 850.00],  # 未調整收盤價 (正確的)
+        })
+
+        price_file = dir_price / "price.xlsx"
+        df_price.to_excel(price_file, index=False)
+
+        # 使用新的優先順序關鍵字清單 ("未調整收盤價" 在 "收盤" 之前)
+        result = generator._fetch_stock_data_from_excel(
+            str(price_file), "6138 茂達",
+            ["未調整收盤價", "均價", "收盤", "價格", "均"]
+        )
+
+        # 應拤到 329（或 329.00），而非 369.50
+        assert result is not None, "應賠務找到欄位資料"
+        assert result.startswith("329"), f"應取得未調整收盤價 329，實際拿到: {result}"
 
     def test_comprehensive_comparison_table_generation(self, generator):
         """測試綜合大評比與排名整理表格的生成邏輯，確認能處理前3名聯集與公式計算價內外"""

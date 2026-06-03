@@ -333,6 +333,8 @@ class ReportGenerator:
     def _fetch_stock_data_from_excel(self, file_path: str, stock_name: str, target_keywords: list) -> str | None:
         """
         從指定的 Excel 檔案中檢索該股票的數據（支援智慧模糊匹配名稱與代號）。
+        target_keywords 按優先順序排列，系統會依序嘗試每個關鍵字，找到有效數值後立即回傳。
+        這確保了「未調整收盤價」等高優先欄位不會被「收盤」等模糊關鍵字搶先命中。
         """
         import pandas as pd
         from pathlib import Path
@@ -364,16 +366,18 @@ class ReportGenerator:
             if matched_row is None:
                 return None
 
-            # 2. 尋找匹配的欄位數據
-            for col in df.columns:
-                col_str = str(col)
-                if any(kw in col_str for kw in target_keywords):
-                    val = matched_row[col]
-                    if pd.isna(val):
-                        continue
-                    if isinstance(val, float):
-                        return f"{val:,.2f}"
-                    return str(val).strip()
+            # 2. 依優先順序逐一嘗試 target_keywords，找到第一個有效非空值即回傳。
+            # 此設計確保「未調整收盤價」等精確欄位不被「收盤」等模糊關鍵字搶先匹配。
+            for kw in target_keywords:
+                for col in df.columns:
+                    col_str = str(col)
+                    if kw in col_str:
+                        val = matched_row[col]
+                        if pd.isna(val):
+                            continue
+                        if isinstance(val, float):
+                            return f"{val:,.2f}"
+                        return str(val).strip()
             return None
         except Exception as e:
             print(f"[本機檢索] 解析 Excel 失敗: {e}")
@@ -396,7 +400,7 @@ class ReportGenerator:
             "source": "網路搜尋"
         }
 
-        # 嘗試使用 Yahoo API 取得即時股價
+        # 嘗試使用 Yahoo API 取得前一日收盤價（chartPreviousClose），而非即時市價
         import urllib.request
         import json
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
@@ -406,7 +410,8 @@ class ReportGenerator:
             with urllib.request.urlopen(req, timeout=2.5) as response:
                 data = json.loads(response.read().decode())
                 meta = data['chart']['result'][0]['meta']
-                price = meta.get('regularMarketPrice')
+                # 優先取前一日未調整收盤價，避免因盤中即時市價導致價格偏差
+                price = meta.get('chartPreviousClose') or meta.get('previousClose')
                 if price:
                     res["avg_price"] = f"{price:,.2f} 元"
         except Exception:
@@ -451,7 +456,8 @@ class ReportGenerator:
         file_fore = self._find_latest_excel_in_dir(self._config.get_folder_foreign_ownership())
 
         # 2. 嘗試自本機檢索
-        local_price = self._fetch_stock_data_from_excel(file_price, full_stock_id, ["均價", "收盤", "價格", "均"])
+        # 日均價欄位優先順序：先精確比對「未調整收盤價」，再嘗試其他收盤/均價欄位
+        local_price = self._fetch_stock_data_from_excel(file_price, full_stock_id, ["未調整收盤價", "均價", "收盤", "價格", "均"])
         local_inst = self._fetch_stock_data_from_excel(file_inst, full_stock_id, ["買賣超", "法人", "三大法人", "張數", "今日"])
         local_fore = self._fetch_stock_data_from_excel(file_fore, full_stock_id, ["持股", "比例", "外資", "百分比", "%"])
 
