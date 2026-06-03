@@ -150,6 +150,10 @@ class TestReportGeneratorChips:
 
         # 3. 測試讀取與智慧匹配
         df_p1 = pd.DataFrame({"標的證券": ["8150 南茂"]})
+        
+        # 模擬網路獲取股價失敗，以檢驗本機降級讀取與智慧匹配邏輯
+        generator._fetch_web_price = lambda name: None
+        
         local_price = generator._fetch_stock_data_from_excel(str(price_file), "8150 南茂", ["未調整收盤價", "均價", "收盤", "價格", "均"])
         local_inst = generator._fetch_stock_data_from_excel(str(inst_file), "8150 南茂", ["買賣超", "法人", "三大法人", "張數", "今日"])
         local_fore = generator._fetch_stock_data_from_excel(str(fore_file), "8150 南茂", ["持股", "比例", "外資", "百分比", "%"])
