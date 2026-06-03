@@ -191,7 +191,7 @@ sequenceDiagram
 
     User->>MW: 點擊匯出 PDF
     MW->>AC: export_pdf(stock_name)
-    AC->>RG: generate_report(...) + generate_v2_report(...)
+    AC->>RG: generate_report(..., output_path=[股票代號名稱]_wr_[timestamp].pdf) + generate_v2_report(..., output_path=[股票代號名稱]_wr_v2_[timestamp].pdf)
     RG-->>AC: 兩個 PDF 檔案路徑
     AC-->>MW: Signal: export_done(v2_path)
     MW->>User: 顯示完成對話框
@@ -486,6 +486,11 @@ flowchart TD
 4. **流暢性與健壯性保障**：
    * **異常隔離**：在批次生成中加入 try-except，若單一股票因代號不存在等原因失敗，系統將記錄日誌並繼續處理名單中的下一檔，絕不導致整個批次程序崩潰。
    * **取消中斷**：UI 的「取消」動作會向 Controller 傳遞 Boolean 旗標，Controller 隨即於下一個迭代安全退出，回收資源。
+
+### 15.3 批次匯出檔名命名規格
+批次產生的雙版本 PDF 報告書檔名，同樣會在最前面加上股票代號與名稱，並帶有該次批次執行時的**統一時間戳記**。
+- **原版 (V1) 檔名格式**：`{股票代號名稱}_wr_{YYYYMMDD_HHMMSS}.pdf`
+- **V2.0 版檔名格式**：`{股票代號名稱}_wr_v2_{YYYYMMDD_HHMMSS}.pdf`
 
 ---
 

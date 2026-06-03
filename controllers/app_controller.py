@@ -294,8 +294,12 @@ class AppController(QObject):
             self.error_occurred.emit("尚無篩選資料，請先載入 Excel。")
             return
         out = output_dir or self._config.get_output_dir()
-        fp_v1 = DataExporter.build_filepath(out, "warrant_report", "pdf")
-        fp_v2 = DataExporter.build_filepath(out, "warrant_report_v2", "pdf")
+        import re
+        safe_stock = re.sub(r'[\\/:*?"<>|]', '', stock_name).strip()
+        prefix_v1 = f"{safe_stock}_wr" if safe_stock else "wr"
+        prefix_v2 = f"{safe_stock}_wr_v2" if safe_stock else "wr_v2"
+        fp_v1 = DataExporter.build_filepath(out, prefix_v1, "pdf")
+        fp_v2 = DataExporter.build_filepath(out, prefix_v2, "pdf")
         try:
             self.status_message.emit("PDF 報告生成中...")
             
@@ -560,6 +564,7 @@ class AppController(QObject):
             return
             
         # 3. 啟動批次迴圈
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         self._batch_cancelled = False
         self._last_batch_skipped_stocks = []  # 開始時清空跳過清單
         total = len(stock_list)
@@ -593,9 +598,9 @@ class AppController(QObject):
                 
                 # 自動建立輸出檔名
                 import re
-                safe_stock = re.sub(r'[\\/:*?"<>|]', '', stock)
-                fp_v1 = str(target_dir / f"warrant_report_{safe_stock}.pdf")
-                fp_v2 = str(target_dir / f"warrant_report_v2_{safe_stock}.pdf")
+                safe_stock = re.sub(r'[\\/:*?"<>|]', '', stock).strip()
+                fp_v1 = str(target_dir / f"{safe_stock}_wr_{ts}.pdf")
+                fp_v2 = str(target_dir / f"{safe_stock}_wr_v2_{ts}.pdf")
                 
                 # 產生雙版本報告書
                 self._report.generate_report(
